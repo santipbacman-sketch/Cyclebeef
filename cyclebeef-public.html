@@ -212,12 +212,15 @@ footer{
   </div>
 </div>
 
-<script type="module">
-import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getAuth,signInWithEmailAndPassword}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import{getFirestore,collection,query,where,getDocs}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-const app=initializeApp({apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",authDomain:"cyclebeef-a1463.firebaseapp.com",projectId:"cyclebeef-a1463",storageBucket:"cyclebeef-a1463.firebasestorage.app",messagingSenderId:"431750123908",appId:"1:431750123908:web:58df58e8edfa2dd2f24dd1"});
-const auth=getAuth(app);const db=getFirestore(app);
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig={apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",authDomain:"cyclebeef-a1463.firebaseapp.com",projectId:"cyclebeef-a1463",storageBucket:"cyclebeef-a1463.firebasestorage.app",messagingSenderId:"431750123908",appId:"1:431750123908:web:58df58e8edfa2dd2f24dd1"};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.firestore();
+
 window.hacerLogin=async function(){
   const em=document.getElementById("login-email").value.trim();
   const pw=document.getElementById("login-password").value;
@@ -225,9 +228,15 @@ window.hacerLogin=async function(){
   const err=document.getElementById("login-error");
   if(!em||!pw){err.textContent="Completá email y contraseña.";err.classList.add("show");return;}
   btn.disabled=true;btn.innerHTML="<span class=sp></span>Ingresando...";err.classList.remove("show");
-  try{await signInWithEmailAndPassword(auth,em,pw);window.location.href="cyclebeef-sistema.html";}
-  catch(e){btn.disabled=false;btn.textContent="Ingresar";err.classList.add("show");}
+  try{
+    await auth.signInWithEmailAndPassword(em,pw);
+    window.location.href="cyclebeef-sistema.html";
+  }catch(e){
+    btn.disabled=false;btn.textContent="Ingresar";
+    err.textContent="Email o contraseña incorrectos.";err.classList.add("show");
+  }
 };
+
 window.buscarLote=async function(){
   const lote=document.getElementById("traza-input").value.trim().toUpperCase();
   const rEl=document.getElementById("traza-result");
@@ -237,13 +246,13 @@ window.buscarLote=async function(){
   rEl.classList.remove("show");eEl.classList.remove("show");
   btn.disabled=true;btn.innerHTML="<span class=sp></span>";
   try{
-    const snap=await getDocs(query(collection(db,"entradas"),where("lote","==",lote)));
+    const snap=await db.collection("entradas").where("lote","==",lote).get();
     if(snap.empty){eEl.classList.add("show");btn.disabled=false;btn.textContent="Buscar";return;}
     const d=snap.docs[0].data();
     let campo="—",prov="—",crianza="—",hist="",maps="",frigo="—",senasa="—";
-    if(d.campoId){try{const cs=await getDocs(query(collection(db,"campos"),where("__name__","==",d.campoId)));if(!cs.empty){const c=cs.docs[0].data();campo=c.nombre||"—";prov=c.provincia||"—";crianza=c.tipoCrianza||"—";hist=c.historia||"";if(c.lat&&c.lng)maps="https://www.google.com/maps?q="+c.lat+","+c.lng;else if(c.direccion)maps="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(c.direccion);}}catch(e){}}
-    if(d.frigorificoId){try{const fs=await getDocs(query(collection(db,"frigorificos"),where("__name__","==",d.frigorificoId)));if(!fs.empty){const f=fs.docs[0].data();frigo=f.nombre||"—";senasa=f.habilitacion||"—";}}catch(e){}}
-    let fecha="—";try{const ps=await getDocs(query(collection(db,"producciones"),where("lote","==",lote)));if(!ps.empty){const p=ps.docs[0].data();if(p.fecha)fecha=new Date(p.fecha+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});}}catch(e){}
+    if(d.campoId){try{const c=await db.collection("campos").doc(d.campoId).get();if(c.exists){const cd=c.data();campo=cd.nombre||"—";prov=cd.provincia||"—";crianza=cd.tipoCrianza||"—";hist=cd.historia||"";if(cd.lat&&cd.lng)maps="https://www.google.com/maps?q="+cd.lat+","+cd.lng;else if(cd.direccion)maps="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(cd.direccion);}}catch(e){}}
+    if(d.frigorificoId){try{const f=await db.collection("frigorificos").doc(d.frigorificoId).get();if(f.exists){const fd=f.data();frigo=fd.nombre||"—";senasa=fd.habilitacion||"—";}}catch(e){}}
+    let fecha="—";try{const ps=await db.collection("producciones").where("lote","==",lote).get();if(!ps.empty){const p=ps.docs[0].data();if(p.fecha)fecha=new Date(p.fecha+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});}}catch(e){}
     document.getElementById("res-lote").textContent=lote;
     document.getElementById("res-campo").textContent=campo;
     document.getElementById("res-provincia").textContent=prov;
@@ -252,7 +261,7 @@ window.buscarLote=async function(){
     document.getElementById("res-senasa").textContent=senasa;
     document.getElementById("res-fecha").textContent=fecha;
     const hEl=document.getElementById("res-historia");
-    if(hist){hEl.textContent="""+hist+""";hEl.style.display="block";}else{hEl.style.display="none";}
+    if(hist){hEl.textContent='"'+hist+'"';hEl.style.display="block";}else{hEl.style.display="none";}
     const mEl=document.getElementById("res-maps");
     if(maps){mEl.href=maps;mEl.classList.add("show");}else{mEl.classList.remove("show");}
     rEl.classList.add("show");
