@@ -6298,24 +6298,26 @@ async function guardarPersonal(){
   cerrarModal('modal-personal');toast('Empleado guardado ✓');cargarPersonal();
 }
 async function cargarPersonal(){
-  const snap=await db.collection('personal').get();
   const tbody=document.getElementById('body-personal');
   if(!tbody)return;
-  const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
-  if(snap.empty){tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Sin empleados registrados</div></div></td></tr>';return;}
-  tbody.innerHTML=snap.docs.map(d=>{
-    const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
-    return `<tr>
-      <td class="fw-600">${v.nombre||'—'}<br><span style="font-size:11px;color:var(--muted)">${v.puesto||''}</span></td>
-      <td class="td-mono">${v.cuil||'—'}</td>
-      <td>${v.ingreso?new Date(v.ingreso+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
-      <td class="td-right fw-600">${f(v.sueldoBruto)}<br><span style="font-size:11px;color:var(--muted)">Neto: ${f(v.sueldoNeto)}</span></td>
-      <td>${v.periodo||'—'}</td>
-      <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
-      <td class="td-right" style="color:${s>0?'var(--g2)':s<0?'var(--red)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
-      <td><button class="btn-icon" onclick="editarRegistro('personal','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
-    </tr>`;
-  }).join('');
+  try{
+    const snap=await db.collection('personal').get();
+    const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
+    if(snap.empty){tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Sin empleados registrados</div></div></td></tr>';return;}
+    tbody.innerHTML=snap.docs.map(d=>{
+      const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
+      return `<tr>
+        <td class="fw-600">${v.nombre||'—'}<br><span style="font-size:11px;color:var(--muted)">${v.puesto||''}</span></td>
+        <td class="td-mono">${v.cuil||'—'}</td>
+        <td>${v.ingreso?new Date(v.ingreso+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
+        <td class="td-right fw-600">${f(v.sueldoBruto)}<br><span style="font-size:11px;color:var(--muted)">Neto: ${f(v.sueldoNeto)}</span></td>
+        <td>${v.periodo||'—'}</td>
+        <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
+        <td class="td-right" style="color:${s>0?'var(--g2)':s<0?'var(--red)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
+        <td><button class="btn-icon" onclick="editarRegistro('personal','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
+      </tr>`;
+    }).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="8" style="color:red;padding:16px">Error al cargar: '+e.message+'</td></tr>';}
 }
 function abrirModalCostoFijo(){
   ['cf-descripcion','cf-obs'].forEach(id=>document.getElementById(id).value='');
@@ -6359,24 +6361,26 @@ async function cargarResumenCostos(){
     Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
 }
 async function cargarCostosFijos(){
-  const snap=await db.collection('costosfijos').get();
   const tbody=document.getElementById('body-costosfijos');
   if(!tbody)return;
-  const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
-  const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
-  if(snap.empty){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
-  tbody.innerHTML=snap.docs.map(d=>{
-    const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
-    return `<tr>
-      <td><span class="badge" style="background:var(--sand);color:var(--g2)">${cats[v.categoria]||v.categoria}</span></td>
-      <td>${v.descripcion||'—'}</td>
-      <td class="td-right fw-600">${f(v.monto)}</td>
-      <td>${v.periodo||'—'}</td>
-      <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
-      <td class="td-right" style="color:${s<0?'var(--red)':s>0?'var(--g2)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
-      <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
-    </tr>`;
-  }).join('');
+  try{
+    const snap=await db.collection('costosfijos').get();
+    const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
+    const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+    if(snap.empty){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
+    tbody.innerHTML=snap.docs.map(d=>{
+      const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
+      return `<tr>
+        <td><span class="badge" style="background:var(--sand);color:var(--g2)">${cats[v.categoria]||v.categoria}</span></td>
+        <td>${v.descripcion||'—'}</td>
+        <td class="td-right fw-600">${f(v.monto)}</td>
+        <td>${v.periodo||'—'}</td>
+        <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
+        <td class="td-right" style="color:${s<0?'var(--red)':s>0?'var(--g2)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
+        <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
+      </tr>`;
+    }).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error al cargar: '+e.message+'</td></tr>';}
 }
 // ══ EDICIÓN DE MAESTROS ══
 const _editConfig = {
