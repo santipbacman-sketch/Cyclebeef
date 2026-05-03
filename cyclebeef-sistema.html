@@ -4649,8 +4649,12 @@ function cambiarTab(tab,el){
 }
 
 function abrirNuevoMaestro(){
+  // Resetear edición activa antes de abrir nuevo
+  _editId = null; _editCol = null;
   const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato',personal:'modal-personal'};
   cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-personal');cerrarModal('modal-costofijo');
+  // Para personal usar abrirModalPersonal() que limpia campos y recalcula
+  if(tabActual==='personal'){ abrirModalPersonal(); return; }
   document.getElementById(modales[tabActual]).classList.add('show');
 }
 
