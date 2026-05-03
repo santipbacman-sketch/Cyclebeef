@@ -946,30 +946,34 @@ async function guardarCheque(){
 
 async function cargarCheques(){
   const snap = await db.collection('cheques').orderBy('vto','asc').get();
-  const tbody = document.getElementById('body-cheques');
-  if(snap.empty){
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
-    return;
+
+  const cobrar = snap.docs.filter(d => d.data().tipo === 'cobrar');
+  const pagar = snap.docs.filter(d => d.data().tipo === 'pagar');
+
+  function filasCheque(docs, cols){
+    if(docs.length === 0) return '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques</div></div></td></tr>';
+    return docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+      const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+      return `<tr>
+        <td class="td-mono">${v.numero}</td>
+        <td>${v.banco||'—'}</td>
+        <td>${v.tercero||'—'}</td>
+        <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.monto)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
+      </tr>`;
+    }).join('');
   }
-  tbody.innerHTML = snap.docs.map(d => {
-    const v = d.data();
-    const dias = diasParaVencer(v.vto);
-    const vencido = dias < 0;
-    const urgente = dias >= 0 && dias <= 5;
-    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
-    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
-    return `<tr>
-      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
-      <td class="td-mono">${v.numero}</td>
-      <td>${v.banco||'—'}</td>
-      <td>${v.tercero||'—'}</td>
-      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td class="td-right fw-600">${fmt(v.monto)}</td>
-      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
-      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
-    </tr>`;
-  }).join('');
+
+  document.getElementById('body-cheques-cobrar').innerHTML = filasCheque(cobrar);
+  document.getElementById('body-cheques-pagar').innerHTML = filasCheque(pagar);
 }
 
 
@@ -1140,6 +1144,14 @@ async function cargarDashboard(){
       ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
     </div>
   `).join('');
+}
+
+
+function cambiarTabCheques(tipo, el){
+  document.getElementById('subtab-cheques-cobrar').style.display = tipo === 'cobrar' ? 'block' : 'none';
+  document.getElementById('subtab-cheques-pagar').style.display = tipo === 'pagar' ? 'block' : 'none';
+  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
 }
 
 </script>
@@ -2083,30 +2095,34 @@ async function guardarCheque(){
 
 async function cargarCheques(){
   const snap = await db.collection('cheques').orderBy('vto','asc').get();
-  const tbody = document.getElementById('body-cheques');
-  if(snap.empty){
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
-    return;
+
+  const cobrar = snap.docs.filter(d => d.data().tipo === 'cobrar');
+  const pagar = snap.docs.filter(d => d.data().tipo === 'pagar');
+
+  function filasCheque(docs, cols){
+    if(docs.length === 0) return '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques</div></div></td></tr>';
+    return docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+      const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+      return `<tr>
+        <td class="td-mono">${v.numero}</td>
+        <td>${v.banco||'—'}</td>
+        <td>${v.tercero||'—'}</td>
+        <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.monto)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
+      </tr>`;
+    }).join('');
   }
-  tbody.innerHTML = snap.docs.map(d => {
-    const v = d.data();
-    const dias = diasParaVencer(v.vto);
-    const vencido = dias < 0;
-    const urgente = dias >= 0 && dias <= 5;
-    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
-    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
-    return `<tr>
-      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
-      <td class="td-mono">${v.numero}</td>
-      <td>${v.banco||'—'}</td>
-      <td>${v.tercero||'—'}</td>
-      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td class="td-right fw-600">${fmt(v.monto)}</td>
-      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
-      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
-    </tr>`;
-  }).join('');
+
+  document.getElementById('body-cheques-cobrar').innerHTML = filasCheque(cobrar);
+  document.getElementById('body-cheques-pagar').innerHTML = filasCheque(pagar);
 }
 
 
@@ -2277,6 +2293,14 @@ async function cargarDashboard(){
       ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
     </div>
   `).join('');
+}
+
+
+function cambiarTabCheques(tipo, el){
+  document.getElementById('subtab-cheques-cobrar').style.display = tipo === 'cobrar' ? 'block' : 'none';
+  document.getElementById('subtab-cheques-pagar').style.display = tipo === 'pagar' ? 'block' : 'none';
+  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
 }
 
 </script>
@@ -3220,30 +3244,34 @@ async function guardarCheque(){
 
 async function cargarCheques(){
   const snap = await db.collection('cheques').orderBy('vto','asc').get();
-  const tbody = document.getElementById('body-cheques');
-  if(snap.empty){
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
-    return;
+
+  const cobrar = snap.docs.filter(d => d.data().tipo === 'cobrar');
+  const pagar = snap.docs.filter(d => d.data().tipo === 'pagar');
+
+  function filasCheque(docs, cols){
+    if(docs.length === 0) return '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques</div></div></td></tr>';
+    return docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+      const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+      return `<tr>
+        <td class="td-mono">${v.numero}</td>
+        <td>${v.banco||'—'}</td>
+        <td>${v.tercero||'—'}</td>
+        <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.monto)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
+      </tr>`;
+    }).join('');
   }
-  tbody.innerHTML = snap.docs.map(d => {
-    const v = d.data();
-    const dias = diasParaVencer(v.vto);
-    const vencido = dias < 0;
-    const urgente = dias >= 0 && dias <= 5;
-    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
-    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
-    return `<tr>
-      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
-      <td class="td-mono">${v.numero}</td>
-      <td>${v.banco||'—'}</td>
-      <td>${v.tercero||'—'}</td>
-      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td class="td-right fw-600">${fmt(v.monto)}</td>
-      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
-      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
-    </tr>`;
-  }).join('');
+
+  document.getElementById('body-cheques-cobrar').innerHTML = filasCheque(cobrar);
+  document.getElementById('body-cheques-pagar').innerHTML = filasCheque(pagar);
 }
 
 
@@ -3414,6 +3442,14 @@ async function cargarDashboard(){
       ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
     </div>
   `).join('');
+}
+
+
+function cambiarTabCheques(tipo, el){
+  document.getElementById('subtab-cheques-cobrar').style.display = tipo === 'cobrar' ? 'block' : 'none';
+  document.getElementById('subtab-cheques-pagar').style.display = tipo === 'pagar' ? 'block' : 'none';
+  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
 }
 
 </script>
@@ -3813,26 +3849,53 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <!-- CHEQUES -->
   <div id="tab-cobros-cheques" style="display:none">
     <div class="flex-between mb-16">
-      <div></div>
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab active" onclick="cambiarTabCheques('cobrar',this)">Cheques a cobrar</button>
+        <button class="tab" onclick="cambiarTabCheques('pagar',this)">Cheques a pagar</button>
+      </div>
       <button class="btn btn-primary" onclick="abrirModalCheque()">+ Nuevo cheque</button>
     </div>
-    <div class="card table-wrap">
-      <table>
-        <thead><tr>
-          <th>Tipo</th>
-          <th>N° Cheque</th>
-          <th>Banco</th>
-          <th>Emisor/Receptor</th>
-          <th>Fecha emisión</th>
-          <th>Fecha acreditación/vto</th>
-          <th class="td-right">Monto</th>
-          <th>Estado</th>
-          <th></th>
-        </tr></thead>
-        <tbody id="body-cheques">
-          <tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>
-        </tbody>
-      </table>
+
+    <!-- A COBRAR -->
+    <div id="subtab-cheques-cobrar">
+      <div class="card table-wrap">
+        <table>
+          <thead><tr>
+            <th>N° Cheque</th>
+            <th>Banco</th>
+            <th>Nos lo dio</th>
+            <th>Fecha emisión</th>
+            <th>Fecha acreditación</th>
+            <th class="td-right">Monto</th>
+            <th>Estado</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="body-cheques-cobrar">
+            <tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques a cobrar</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- A PAGAR -->
+    <div id="subtab-cheques-pagar" style="display:none">
+      <div class="card table-wrap">
+        <table>
+          <thead><tr>
+            <th>N° Cheque</th>
+            <th>Banco</th>
+            <th>Se lo dimos a</th>
+            <th>Fecha emisión</th>
+            <th>Fecha vencimiento</th>
+            <th class="td-right">Monto</th>
+            <th>Estado</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="body-cheques-pagar">
+            <tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques a pagar</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -5738,30 +5801,34 @@ async function guardarCheque(){
 
 async function cargarCheques(){
   const snap = await db.collection('cheques').orderBy('vto','asc').get();
-  const tbody = document.getElementById('body-cheques');
-  if(snap.empty){
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
-    return;
+
+  const cobrar = snap.docs.filter(d => d.data().tipo === 'cobrar');
+  const pagar = snap.docs.filter(d => d.data().tipo === 'pagar');
+
+  function filasCheque(docs, cols){
+    if(docs.length === 0) return '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques</div></div></td></tr>';
+    return docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+      const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+      return `<tr>
+        <td class="td-mono">${v.numero}</td>
+        <td>${v.banco||'—'}</td>
+        <td>${v.tercero||'—'}</td>
+        <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.monto)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
+      </tr>`;
+    }).join('');
   }
-  tbody.innerHTML = snap.docs.map(d => {
-    const v = d.data();
-    const dias = diasParaVencer(v.vto);
-    const vencido = dias < 0;
-    const urgente = dias >= 0 && dias <= 5;
-    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
-    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
-    return `<tr>
-      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
-      <td class="td-mono">${v.numero}</td>
-      <td>${v.banco||'—'}</td>
-      <td>${v.tercero||'—'}</td>
-      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
-      <td class="td-right fw-600">${fmt(v.monto)}</td>
-      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
-      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
-    </tr>`;
-  }).join('');
+
+  document.getElementById('body-cheques-cobrar').innerHTML = filasCheque(cobrar);
+  document.getElementById('body-cheques-pagar').innerHTML = filasCheque(pagar);
 }
 
 
@@ -5932,6 +5999,14 @@ async function cargarDashboard(){
       ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
     </div>
   `).join('');
+}
+
+
+function cambiarTabCheques(tipo, el){
+  document.getElementById('subtab-cheques-cobrar').style.display = tipo === 'cobrar' ? 'block' : 'none';
+  document.getElementById('subtab-cheques-pagar').style.display = tipo === 'pagar' ? 'block' : 'none';
+  el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
 }
 
 </script>
