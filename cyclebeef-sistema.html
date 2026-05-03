@@ -2554,8 +2554,8 @@ async function cargarDashboard(){
   document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
   document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
   document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
-  document.getElementById('rep-iibb-total').textContent = fmt(totalIibb);
-  document.getElementById('dash-iibb-detalle').innerHTML = Object.entries(iibbPorProvincia).length === 0
+  const elIibb=document.getElementById('rep-iibb-total'); if(elIibb) elIibb.textContent=fmt(totalIibb);
+  const elIibbDet=document.getElementById('dash-iibb-detalle'); if(elIibbDet) elIibbDet.innerHTML = Object.entries(iibbPorProvincia).length === 0
     ? '<div class="iva-row"><span class="iva-label">Sin datos</span></div>'
     : Object.entries(iibbPorProvincia).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="iva-row"><span class="iva-label">${p}</span><span class="fw-600">${fmt(v)}</span></div>`).join('');
 
