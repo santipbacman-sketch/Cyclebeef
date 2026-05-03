@@ -4648,7 +4648,7 @@ async function cargarProveedores(){
     <td>${v.iva?v.iva+'%':'—'}</td>
     <td><div>${v.contacto||'—'}</div><div class="text-sm text-muted">${v.tel||''}</div></td>
     <td class="td-mono">${v.senasa||'—'}</td>
-    <td><button class="btn-icon" onclick="eliminar('proveedores','${d.id}',cargarProveedores)">🗑</button></td>
+    <td style='display:flex;gap:4px'><button class="btn-icon" onclick="editarRegistro('proveedores','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('proveedores','${d.id}',cargarProveedores)">🗑</button></td>
   </tr>`;}).join('');
   // llenar select entrada
   const sel=document.getElementById('ent-proveedor');
@@ -4679,7 +4679,7 @@ async function cargarClientes(){
     <td>${v.iva?v.iva+'%':'—'}</td>
     <td>${pagoLabel[v.condPago]||'—'}</td>
     <td><div>${v.contacto||'—'}</div><div class="text-sm text-muted">${v.tel||''}</div></td>
-    <td><button class="btn-icon" onclick="eliminar('clientes','${d.id}',cargarClientes)">🗑</button></td>
+    <td style='display:flex;gap:4px'><button class="btn-icon" onclick="editarRegistro('clientes','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('clientes','${d.id}',cargarClientes)">🗑</button></td>
   </tr>`;}).join('');
 }
 
@@ -4703,7 +4703,7 @@ async function cargarCampos(){
     <td class="fw-600">${v.nombre||'—'}</td><td>${v.productor||'—'}</td>
     <td>${v.provincia||'—'}</td><td>${v.localidad||'—'}</td>
     <td><span class="badge badge-green">${v.tipoCrianza||'—'}</span></td>
-    <td><button class="btn-icon" onclick="eliminar('campos','${d.id}',cargarCampos)">🗑</button></td>
+    <td style='display:flex;gap:4px'><button class="btn-icon" onclick="editarRegistro('campos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('campos','${d.id}',cargarCampos)">🗑</button></td>
   </tr>`;}).join('');
   // llenar select entrada
   const sel=document.getElementById('ent-campo');
@@ -4729,7 +4729,7 @@ async function cargarFrigorificos(){
     <td class="td-mono">${v.cuit||'—'}</td><td class="td-mono">${v.senasa||'—'}</td>
     <td>${v.provincia||'—'}</td>
     <td><div>${v.contacto||'—'}</div><div class="text-sm text-muted">${v.tel||''}</div></td>
-    <td><button class="btn-icon" onclick="eliminar('frigorificos','${d.id}',cargarFrigorificos)">🗑</button></td>
+    <td style='display:flex;gap:4px'><button class="btn-icon" onclick="editarRegistro('frigorificos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('frigorificos','${d.id}',cargarFrigorificos)">🗑</button></td>
   </tr>`;}).join('');
   const sel=document.getElementById('ent-frigorifico');
   if(sel){sel.innerHTML='<option value="">Seleccionar...</option>';snap.docs.forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=d.data().nombre;sel.appendChild(o);});}
@@ -6263,7 +6263,7 @@ async function cargarPersonal(){
       <td>${v.periodo||'—'}</td>
       <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
       <td class="td-right" style="color:${s>0?'var(--g2)':s<0?'var(--red)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
-      <td><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
+      <td><button class="btn-icon" onclick="editarRegistro('personal','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -6324,10 +6324,167 @@ async function cargarCostosFijos(){
       <td>${v.periodo||'—'}</td>
       <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
       <td class="td-right" style="color:${s<0?'var(--red)':s>0?'var(--g2)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
-      <td><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
+      <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
     </tr>`;
   }).join('');
 }
+// ══ EDICIÓN DE MAESTROS ══
+const _editConfig = {
+  proveedores: {
+    modal:'modal-proveedor',
+    recargar: cargarProveedores,
+    campos: {
+      'prov-nombre':'nombre','prov-razon':'razonSocial','prov-cuit':'cuit',
+      'prov-cond-fiscal':'condFiscal','prov-iva':'iva','prov-senasa':'senasa',
+      'prov-direccion':'direccion','prov-contacto':'contacto','prov-tel':'tel',
+      'prov-email':'email','prov-obs':'obs','prov-categoria':'categoria'
+    }
+  },
+  clientes: {
+    modal:'modal-cliente',
+    recargar: cargarClientes,
+    campos: {
+      'cli-nombre':'nombre','cli-razon':'razonSocial','cli-cuit':'cuit',
+      'cli-tipo':'tipo','cli-cond-fiscal':'condFiscal','cli-iva':'iva',
+      'cli-cond-pago':'condPago','cli-limite':'limiteCredito',
+      'cli-direccion':'direccion','cli-provincia':'provincia','cli-iibb':'iibb',
+      'cli-contacto':'contacto','cli-tel':'tel','cli-email':'email','cli-obs':'obs'
+    }
+  },
+  campos: {
+    modal:'modal-campo',
+    recargar: cargarCampos,
+    campos: {
+      'campo-nombre':'nombre','campo-productor':'productor','campo-provincia':'provincia',
+      'campo-localidad':'localidad','campo-crianza':'tipoCrianza',
+      'campo-direccion':'direccion','campo-historia':'historia'
+    }
+  },
+  frigorificos: {
+    modal:'modal-frigorifico',
+    recargar: cargarFrigorificos,
+    campos: {
+      'frigo-nombre':'nombre','frigo-razon':'razonSocial','frigo-cuit':'cuit',
+      'frigo-senasa':'senasa','frigo-provincia':'provincia','frigo-localidad':'localidad',
+      'frigo-direccion':'direccion','frigo-contacto':'contacto','frigo-tel':'tel','frigo-email':'email'
+    }
+  },
+  personal: {
+    modal:'modal-personal',
+    recargar: cargarPersonal,
+    campos: {
+      'per-nombre':'nombre','per-cuil':'cuil','per-ingreso':'ingreso',
+      'per-puesto':'puesto','per-bruto':'sueldoBruto','per-periodo':'periodo',
+      'per-estado':'estadoPago','per-saldo':'saldo','per-obs':'obs'
+    }
+  },
+  costosfijos: {
+    modal:'modal-costofijo',
+    recargar: cargarCostosFijos,
+    campos: {
+      'cf-categoria':'categoria','cf-descripcion':'descripcion','cf-monto':'monto',
+      'cf-periodo':'periodo','cf-estado':'estadoPago','cf-saldo':'saldo','cf-obs':'obs'
+    }
+  }
+};
+
+let _editId = null;
+let _editCol = null;
+
+async function editarRegistro(coleccion, id){
+  const config = _editConfig[coleccion];
+  if(!config) return;
+  const doc = await db.collection(coleccion).doc(id).get();
+  if(!doc.exists) return;
+  const data = doc.data();
+  _editId = id;
+  _editCol = coleccion;
+
+  // Rellenar campos
+  Object.entries(config.campos).forEach(([inputId, campo]) => {
+    const el = document.getElementById(inputId);
+    if(!el) return;
+    const val = data[campo];
+    if(val !== undefined && val !== null) el.value = val;
+  });
+
+  // Si es personal, recalcular liquidación
+  if(coleccion === 'personal' && typeof calcSueldo === 'function') calcSueldo();
+
+  // Cambiar título del modal
+  const header = document.querySelector('#' + config.modal + ' .modal-title');
+  if(header) header.textContent = 'Editar ' + coleccion.charAt(0).toUpperCase() + coleccion.slice(1,-1).replace('sfijo','s fijo');
+
+  document.getElementById(config.modal).classList.add('show');
+}
+
+// Interceptar guardar para hacer update si hay edición activa
+const _origGuardarProveedor = guardarProveedor;
+guardarProveedor = async function(){
+  if(_editId && _editCol==='proveedores'){ await _actualizarDoc('proveedores', cargarProveedores); return; }
+  return _origGuardarProveedor.apply(this, arguments);
+};
+const _origGuardarCliente = guardarCliente;
+guardarCliente = async function(){
+  if(_editId && _editCol==='clientes'){ await _actualizarDoc('clientes', cargarClientes); return; }
+  return _origGuardarCliente.apply(this, arguments);
+};
+const _origGuardarCampo = guardarCampo;
+guardarCampo = async function(){
+  if(_editId && _editCol==='campos'){ await _actualizarDoc('campos', cargarCampos); return; }
+  return _origGuardarCampo.apply(this, arguments);
+};
+const _origGuardarFrigorifico = guardarFrigorifico;
+guardarFrigorifico = async function(){
+  if(_editId && _editCol==='frigorificos'){ await _actualizarDoc('frigorificos', cargarFrigorificos); return; }
+  return _origGuardarFrigorifico.apply(this, arguments);
+};
+const _origGuardarPersonal = guardarPersonal;
+guardarPersonal = async function(){
+  if(_editId && _editCol==='personal'){ await _actualizarDoc('personal', cargarPersonal); return; }
+  return _origGuardarPersonal.apply(this, arguments);
+};
+const _origGuardarCostoFijo = guardarCostoFijo;
+guardarCostoFijo = async function(){
+  if(_editId && _editCol==='costosfijos'){ await _actualizarDoc('costosfijos', cargarCostosFijos); return; }
+  return _origGuardarCostoFijo.apply(this, arguments);
+};
+
+async function _actualizarDoc(coleccion, recargar){
+  const config = _editConfig[coleccion];
+  const datos = {};
+  Object.entries(config.campos).forEach(([inputId, campo]) => {
+    const el = document.getElementById(inputId);
+    if(!el) return;
+    const val = el.value;
+    // Intentar convertir a número si corresponde
+    const num = parseFloat(val);
+    datos[campo] = !isNaN(num) && val !== '' && ['limiteCredito','iva','iibb','sueldoBruto','saldo','monto'].includes(campo) ? num : val;
+  });
+  await db.collection(coleccion).doc(_editId).update(datos);
+  _editId = null; _editCol = null;
+  // Restaurar título
+  const header = document.querySelector('#' + config.modal + ' .modal-title');
+  if(header) header.textContent = 'Nuevo ' + coleccion.slice(0,-1);
+  document.getElementById(config.modal).classList.remove('show');
+  toast('Actualizado ✓');
+  recargar();
+}
+
+// Resetear edición al cerrar modal
+const _origCerrarModal = cerrarModal;
+cerrarModal = function(id){
+  if(_editCol && _editConfig[_editCol] && _editConfig[_editCol].modal === id){
+    _editId = null; _editCol = null;
+    const header = document.querySelector('#' + id + ' .modal-title');
+    if(header){
+      const nombre = id.replace('modal-','').replace('frigorifico','frigorífico');
+      header.textContent = 'Nuevo ' + nombre;
+    }
+  }
+  _origCerrarModal.apply(this, arguments);
+};
+
 </script>
 </body>
 </html>
