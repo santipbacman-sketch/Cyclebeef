@@ -2821,6 +2821,7 @@ async function cargarPersonal(){
       </tr>`;
     }).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="8" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
+}
 function abrirModalCostoFijo(){
   ['cf-descripcion','cf-obs'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('cf-monto').value='';
@@ -2883,6 +2884,7 @@ async function cargarCostosFijos(){
       </tr>`;
     }).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
+}
 // ══ EDICIÓN DE MAESTROS ══
 const _editConfig = {
   proveedores: {
