@@ -3611,7 +3611,6 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <button class="nav-item" onclick="irA('ventas',this)"><span class="nav-icon">🧾</span>Ventas</button>
   <div class="sidebar-section">Finanzas</div>
   <button class="nav-item" onclick="irA('cobros',this)"><span class="nav-icon">💰</span>Cobros y pagos</button>
-  <button class="nav-item" onclick="irA('personal',this)"><span class="nav-icon">👤</span>Personal</button>
   <button class="nav-item" onclick="irA('costosfijos',this)"><span class="nav-icon">📋</span>Costos fijos</button>
   <button class="nav-item" onclick="irA('reportes',this)"><span class="nav-icon">📊</span>Reportes</button>
   <div class="sidebar-bottom">
@@ -3634,6 +3633,7 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     <button class="tab" onclick="cambiarTab('frigorificos',this)">Frigoríficos</button>
     <button class="tab" onclick="cambiarTab('cortes',this)">Cortes</button>
     <button class="tab" onclick="cambiarTab('formatos',this)">Formatos</button>
+    <button class="tab" onclick="cambiarTab('personal',this)">Personal</button>
   </div>
   <div id="tab-proveedores" class="tab-content">
     <div class="card table-wrap"><table><thead><tr><th>Nombre comercial</th><th>Categoría</th><th>CUIT/CUIL</th><th>Cond. fiscal</th><th>IVA</th><th>Contacto</th><th>SENASA</th><th></th></tr></thead><tbody id="body-proveedores"><tr><td colspan="8"><div class="empty"><div class="empty-icon">🏢</div><div class="empty-text">Sin proveedores</div></div></td></tr></tbody></table></div>
@@ -3650,10 +3650,12 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <div id="tab-cortes" class="tab-content" style="display:none">
     <div class="card table-wrap"><table><thead><tr><th>Nombre del corte</th><th></th></tr></thead><tbody id="body-cortes"></tbody></table></div>
   </div>
-  <div id="tab-formatos" class="tab-content" style="display:none">
-    <div class="card table-wrap"><table><thead><tr><th>Nombre</th><th>Tipo</th><th class="td-right">Unidades</th><th class="td-right">Gr/unidad</th><th class="td-right">Kg/caja</th><th></th></tr></thead><tbody id="body-formatos"></tbody></table></div>
+  <div id="tab-personal" class="tab-content" style="display:none">
+    <div class="card table-wrap">
+      <table><thead><tr><th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th></tr></thead>
+      <tbody id="body-personal"></tbody></table>
+    </div>
   </div>
-</div>
 
 <!-- ══ ENTRADA DE CARNE ══ -->
 <div class="page" id="page-entrada">
@@ -4481,38 +4483,6 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
 </div>
 
 
-<!-- ══ PERSONAL ══ -->
-<div class="page" id="page-personal">
-  <div class="page-header flex-between">
-    <div><div class="page-title">Personal</div><div class="page-sub">Empleados en relación de dependencia</div></div>
-    <button class="btn-primary" onclick="abrirModalPersonal()">+ Nuevo empleado</button>
-  </div>
-  <div class="card table-wrap">
-    <table>
-      <thead><tr>
-        <th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
-      </tr></thead>
-      <tbody id="body-personal"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ══ COSTOS FIJOS ══ -->
-<div class="page" id="page-costosfijos">
-  <div class="page-header flex-between">
-    <div><div class="page-title">Costos fijos</div><div class="page-sub">Gastos periódicos del negocio</div></div>
-    <button class="btn-primary" onclick="abrirModalCostoFijo()">+ Nuevo costo</button>
-  </div>
-  <div class="card table-wrap">
-    <table>
-      <thead><tr>
-        <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
-      </tr></thead>
-      <tbody id="body-costosfijos"></tbody>
-    </table>
-  </div>
-</div>
-
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",
@@ -4551,6 +4521,7 @@ function irA(pagina,el){
   el.classList.add('active');
   if(pagina==='personal') cargarPersonal();
   if(pagina==='costosfijos') cargarCostosFijos();
+  if(pagina==='costosfijos') cargarResumenCostos();
 }
 
 function cerrarSesion(){auth.signOut().then(()=>window.location.href='cyclebeef-public.html');}
@@ -4563,13 +4534,15 @@ function cambiarTab(tab,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+tab).style.display='block';
   el.classList.add('active');
-  const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato'};
+  if(tab==='personal') cargarPersonal();
+  if(tab==='costosfijos') cargarCostosFijos();
+  const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato',personal:'+ Nuevo empleado'};
   document.getElementById('btn-nuevo-maestro').textContent=labels[tab]||'+ Nuevo';
 }
 
 function abrirNuevoMaestro(){
-  const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato'};
-  cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');
+  const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato',personal:'modal-personal'};
+  cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-personal');
   document.getElementById(modales[tabActual]).classList.add('show');
 }
 
@@ -6044,6 +6017,172 @@ function cambiarTabCheques(tipo, el){
   document.getElementById('subtab-cheques-pagar').style.display = tipo === 'pagar' ? 'block' : 'none';
   el.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
+}
+
+
+<!-- ══ COSTOS FIJOS ══ -->
+<div class="page" id="page-costosfijos">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Costos fijos</div><div class="page-sub">Gastos periódicos del negocio</div></div>
+    <button class="btn-primary" onclick="abrirModalCostoFijo()">+ Nuevo costo</button>
+  </div>
+  <!-- Resumen cards -->
+  <div id="cf-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:24px"></div>
+  <div class="card table-wrap">
+    <table><thead><tr>
+      <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+    </tr></thead><tbody id="body-costosfijos"></tbody></table>
+  </div>
+</div>
+
+
+// ══ PERSONAL ══
+function calcSueldo(){
+  const bruto = parseFloat(document.getElementById('per-bruto').value) || 0;
+  const jub = bruto * 0.11;
+  const os = bruto * 0.03;
+  const ley = bruto * 0.03;
+  const neto = bruto - jub - os - ley;
+  const empleador = bruto * 1.23;
+  const aguinaldo = bruto / 12;
+  const f = v => '$' + v.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('liq-bruto').textContent = f(bruto);
+  document.getElementById('liq-jub').textContent = '−' + f(jub);
+  document.getElementById('liq-os').textContent = '−' + f(os);
+  document.getElementById('liq-ley').textContent = '−' + f(ley);
+  document.getElementById('liq-neto').textContent = f(neto);
+  document.getElementById('liq-empleador').textContent = f(empleador);
+  document.getElementById('liq-aguinaldo').textContent = f(aguinaldo);
+}
+
+function abrirModalPersonal(){
+  document.getElementById('per-nombre').value = '';
+  document.getElementById('per-cuil').value = '';
+  document.getElementById('per-ingreso').valueAsDate = new Date();
+  document.getElementById('per-puesto').value = '';
+  document.getElementById('per-bruto').value = '';
+  document.getElementById('per-periodo').value = 'mensual';
+  document.getElementById('per-estado').value = 'pendiente';
+  document.getElementById('per-saldo').value = '';
+  document.getElementById('per-obs').value = '';
+  calcSueldo();
+  document.getElementById('modal-personal').classList.add('show');
+}
+
+async function guardarPersonal(){
+  const nombre = document.getElementById('per-nombre').value.trim();
+  const cuil = document.getElementById('per-cuil').value.trim();
+  const bruto = parseFloat(document.getElementById('per-bruto').value) || 0;
+  if(!nombre || !cuil || !bruto){ toast('Completá los campos obligatorios','error'); return; }
+  const jub = bruto * 0.11; const os = bruto * 0.03; const ley = bruto * 0.03;
+  await db.collection('personal').add({
+    nombre, cuil,
+    ingreso: document.getElementById('per-ingreso').value,
+    puesto: document.getElementById('per-puesto').value.trim(),
+    sueldoBruto: bruto, sueldoNeto: bruto - jub - os - ley,
+    jubilacion: jub, obraSocial: os, ley19032: ley,
+    costoEmpleador: bruto * 1.23, aguinaldoMensual: bruto / 12,
+    periodo: document.getElementById('per-periodo').value,
+    estadoPago: document.getElementById('per-estado').value,
+    saldo: parseFloat(document.getElementById('per-saldo').value) || 0,
+    obs: document.getElementById('per-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-personal'); toast('Empleado guardado ✓'); cargarPersonal();
+}
+
+async function cargarPersonal(){
+  const snap = await db.collection('personal').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-personal');
+  if(!tbody) return;
+  if(snap.empty){ tbody.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Sin empleados registrados</div></div></td></tr>'; return; }
+  const f = v => '$' + (v||0).toLocaleString('es-AR', {minimumFractionDigits:2});
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const ec = v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber';
+    const saldo = v.saldo||0;
+    return `<tr>
+      <td class="fw-600">${v.nombre||'—'}<br><span style="font-size:11px;color:var(--muted)">${v.puesto||''}</span></td>
+      <td class="td-mono">${v.cuil||'—'}</td>
+      <td>${v.ingreso?new Date(v.ingreso+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
+      <td class="td-right fw-600">${f(v.sueldoBruto)}<br><span style="font-size:11px;color:var(--muted)">Neto: ${f(v.sueldoNeto)}</span></td>
+      <td>${v.periodo||'—'}</td>
+      <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
+      <td class="td-right" style="color:${saldo>0?'var(--g2)':saldo<0?'var(--red)':'inherit'}">${saldo!==0?(f(Math.abs(saldo))+(saldo>0?' adel.':' deuda')):'—'}</td>
+      <td><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ══ COSTOS FIJOS ══
+function abrirModalCostoFijo(){
+  document.getElementById('cf-categoria').value = 'contador';
+  document.getElementById('cf-descripcion').value = '';
+  document.getElementById('cf-monto').value = '';
+  document.getElementById('cf-periodo').value = 'mensual';
+  document.getElementById('cf-estado').value = 'pendiente';
+  document.getElementById('cf-saldo').value = '';
+  document.getElementById('cf-obs').value = '';
+  document.getElementById('modal-costofijo').classList.add('show');
+}
+
+async function guardarCostoFijo(){
+  const categoria = document.getElementById('cf-categoria').value;
+  const monto = parseFloat(document.getElementById('cf-monto').value) || 0;
+  if(!monto){ toast('Ingresá un monto','error'); return; }
+  await db.collection('costosfijos').add({
+    categoria, monto,
+    descripcion: document.getElementById('cf-descripcion').value.trim(),
+    periodo: document.getElementById('cf-periodo').value,
+    estadoPago: document.getElementById('cf-estado').value,
+    saldo: parseFloat(document.getElementById('cf-saldo').value) || 0,
+    obs: document.getElementById('cf-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-costofijo'); toast('Costo fijo guardado ✓'); cargarCostosFijos(); cargarResumenCostos();
+}
+
+async function cargarResumenCostos(){
+  const snap = await db.collection('costosfijos').get();
+  const resumen = {};
+  let totalMensual = 0;
+  snap.docs.forEach(d => {
+    const v = d.data();
+    if(!resumen[v.categoria]) resumen[v.categoria] = 0;
+    resumen[v.categoria] += v.monto || 0;
+    // Normalizar a mensual
+    const factor = {mensual:1,quincenal:2,semanal:4.33,anual:1/12,unico:0}[v.periodo] || 1;
+    totalMensual += (v.monto||0) * factor;
+  });
+  const cats = {contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+  const f = v => '$' + (v||0).toLocaleString('es-AR', {minimumFractionDigits:2});
+  const cardsEl = document.getElementById('cf-cards');
+  if(!cardsEl) return;
+  cardsEl.innerHTML = `<div class="stock-card"><div class="stock-card-label">Total mensual est.</div><div class="stock-card-val" style="font-size:18px">${f(totalMensual)}</div></div>` +
+    Object.entries(resumen).map(([k,v]) => `<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:18px">${f(v)}</div></div>`).join('');
+}
+
+async function cargarCostosFijos(){
+  const snap = await db.collection('costosfijos').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-costosfijos');
+  if(!tbody) return;
+  if(snap.empty){ tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>'; return; }
+  const f = v => '$' + (v||0).toLocaleString('es-AR', {minimumFractionDigits:2});
+  const cats = {contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const ec = v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber';
+    const saldo = v.saldo||0;
+    return `<tr>
+      <td><span class="badge" style="background:var(--sand);color:var(--g2)">${cats[v.categoria]||v.categoria}</span></td>
+      <td>${v.descripcion||'—'}</td>
+      <td class="td-right fw-600">${f(v.monto)}</td>
+      <td>${v.periodo||'—'}</td>
+      <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
+      <td class="td-right" style="color:${saldo<0?'var(--red)':saldo>0?'var(--g2)':'inherit'}">${saldo!==0?(f(Math.abs(saldo))+(saldo>0?' adel.':' deuda')):'—'}</td>
+      <td><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
+    </tr>`;
+  }).join('');
 }
 
 </script>
