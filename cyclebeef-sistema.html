@@ -6,9 +6,615 @@
 <title>Cycle Beef — Sistema</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=Lato:wght@300;400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js">
+// ══ PRODUCCIÓN ══
+let formatosDisponibles = [];
+
+async function abrirModalProduccion(){
+  // Cargar lotes disponibles desde entradas
+  const snap = await db.collection('entradas').orderBy('creado','desc').get();
+  const sel = document.getElementById('prod-lote');
+  sel.innerHTML = '<option value="">Seleccionar lote...</option>';
+  snap.docs.forEach(d => {
+    const v = d.data();
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = v.lote + ' — ' + (v.campoNombre||'') + ' (' + fmtKg(v.totalKg) + ')';
+    o.dataset.kg = v.totalKg;
+    o.dataset.lote = v.lote;
+    sel.appendChild(o);
+  });
+
+  // Cargar proveedores de fazón
+  const provSnap = await db.collection('proveedores').where('categoria','==','fabrica').get();
+  const selProv = document.getElementById('prod-fazon-prov');
+  selProv.innerHTML = '<option value="">Seleccionar...</option>';
+  provSnap.docs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = d.data().nombre;
+    selProv.appendChild(o);
+  });
+
+  // Cargar formatos
+  const fmtSnap = await db.collection('formatos').get();
+  formatosDisponibles = fmtSnap.docs.map(d => ({id:d.id,...d.data()}));
+
+  // Limpiar
+  document.getElementById('prod-fecha').valueAsDate = new Date();
+  document.getElementById('prod-fazon-fecha').valueAsDate = new Date();
+  document.getElementById('prod-kg-entrada').value = '';
+  document.getElementById('prod-fazon-precio').value = '';
+  document.getElementById('prod-fazon-num').value = '';
+  document.getElementById('prod-obs').value = '';
+  document.getElementById('formatos-prod-container').innerHTML = '';
+  agregarFormatoRow();
+  calcProduccion();
+  document.getElementById('modal-produccion').classList.add('show');
+}
+
+document.getElementById && document.addEventListener('change', function(e){
+  if(e.target && e.target.id === 'prod-lote'){
+    const opt = e.target.options[e.target.selectedIndex];
+    const kg = opt.dataset.kg || '';
+    if(kg) document.getElementById('prod-kg-entrada').value = parseFloat(kg).toFixed(2);
+    const lote = opt.dataset.lote || '—';
+    document.getElementById('prod-lote-preview').textContent = 'Lote: ' + lote;
+    calcProduccion();
+  }
+});
+
+function agregarFormatoRow(){
+  const container = document.getElementById('formatos-prod-container');
+  const opts = formatosDisponibles.map(f => 
+    `<option value="${f.id}" data-kg="${f.kgCaja}" data-nombre="${f.nombre}">${f.nombre} (${parseFloat(f.kgCaja).toFixed(2)} kg/u)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'formato-prod-row';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcProduccion()"><option value="">Seleccionar formato...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="0" min="0" step="1" oninput="calcProduccion()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcProduccion()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcProduccion(){
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const kgTotal = cant * kgPorU;
+    row.querySelectorAll('input[type="text"]')[0].value = kgPorU > 0 ? fmtKg(kgPorU) : '';
+    row.querySelectorAll('input[type="text"]')[1].value = kgTotal > 0 ? fmtKg(kgTotal) : '';
+    totalProd += kgTotal;
+  });
+
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const merma = kgEntrada - totalProd;
+  const mermaPorc = kgEntrada > 0 ? (merma/kgEntrada*100) : 0;
+
+  document.getElementById('prod-resumen-entrada').textContent = fmtKg(kgEntrada);
+  document.getElementById('prod-resumen-producido').textContent = fmtKg(totalProd);
+  document.getElementById('prod-resumen-merma').textContent = fmtKg(merma) + ' (' + mermaPorc.toFixed(2) + '%)';
+  document.getElementById('prod-resumen-merma').style.color = merma > 0 ? 'var(--amber)' : 'var(--g3)';
+
+  // Fazón
+  const precio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+  const tipo = document.getElementById('prod-fazon-tipo').value;
+  const neto = totalProd * precio;
+  const iva = tipo === 'C' ? 0 : neto * 0.21;
+  const total = neto + iva;
+
+  document.getElementById('fazon-kg').textContent = fmtKg(totalProd);
+  document.getElementById('fazon-neto').textContent = fmt(neto);
+  document.getElementById('fazon-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('fazon-total').textContent = fmt(total);
+}
+
+async function guardarProduccion(){
+  const loteId = document.getElementById('prod-lote').value;
+  const fecha = document.getElementById('prod-fecha').value;
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const fazonProvId = document.getElementById('prod-fazon-prov').value;
+  const fazonPrecio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+
+  if(!loteId || !fecha || !kgEntrada || !fazonProvId || !fazonPrecio){
+    toast('Completá los campos obligatorios','error'); return;
+  }
+
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  const formatos = [];
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    if(sel.value && cant > 0){
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre;
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const kgTotal = cant * kgPorU;
+      formatos.push({formatoId:sel.value, nombre, cantidad:cant, kgPorUnidad:kgPorU, kgTotal});
+      totalProd += kgTotal;
+    }
+  });
+
+  if(formatos.length === 0){toast('Agregá al menos un formato producido','error'); return;}
+
+  const loteOpt = document.getElementById('prod-lote').options[document.getElementById('prod-lote').selectedIndex];
+  const lote = loteOpt.dataset.lote || '';
+  const merma = kgEntrada - totalProd;
+  const fazonTipo = document.getElementById('prod-fazon-tipo').value;
+  const fazonNeto = totalProd * fazonPrecio;
+  const fazonIva = fazonTipo === 'C' ? 0 : fazonNeto * 0.21;
+
+  const provSnap = await db.collection('proveedores').doc(fazonProvId).get();
+
+  await db.collection('producciones').add({
+    loteEntradaId: loteId,
+    lote,
+    fecha,
+    kgEntrada,
+    kgProducido: totalProd,
+    merma,
+    mermaPorc: kgEntrada > 0 ? (merma/kgEntrada*100) : 0,
+    formatos,
+    fazonProveedorId: fazonProvId,
+    fazonProveedorNombre: provSnap.exists ? provSnap.data().nombre : '—',
+    fazonPrecioPorKg: fazonPrecio,
+    fazonTipo,
+    fazonNum: document.getElementById('prod-fazon-num').value.trim(),
+    fazonFecha: document.getElementById('prod-fazon-fecha').value,
+    fazonVto: document.getElementById('prod-fazon-vto').value,
+    fazonNeto,
+    fazonIva,
+    fazonTotal: fazonNeto + fazonIva,
+    estadoPagoFazon: 'pendiente',
+    obs: document.getElementById('prod-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-produccion');
+  toast('Producción guardada ✓');
+  cargarProducciones();
+}
+
+async function cargarProducciones(){
+  const snap = await db.collection('producciones').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-producciones');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Sin producciones registradas</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const formatsStr = (v.formatos||[]).map(f=>f.nombre+' x'+f.cantidad).join('<br>');
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${v.lote||'—'}</td>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmtKg(v.kgEntrada)}</td>
+      <td class="td-right">${fmtKg(v.kgProducido)}</td>
+      <td class="td-right" style="color:var(--amber)">${fmtKg(v.merma)} (${parseFloat(v.mermaPorc||0).toFixed(1)}%)</td>
+      <td style="font-size:12px">${formatsStr||'—'}</td>
+      <td>${v.fazonProveedorNombre||'—'}<br><span class="badge badge-${v.estadoPagoFazon==='pagada'?'green':'amber'}">${v.estadoPagoFazon||'pendiente'}</span></td>
+      <td class="td-right">${fmt(v.fazonNeto)}</td>
+      <td class="td-right">${fmt(v.fazonIva)}</td>
+      <td class="td-right fw-600">${fmt(v.fazonTotal)}</td>
+      <td><button class="btn-icon" onclick="eliminar('producciones','${d.id}',cargarProducciones)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js">
+// ══ PRODUCCIÓN ══
+let formatosDisponibles = [];
+
+async function abrirModalProduccion(){
+  // Cargar lotes disponibles desde entradas
+  const snap = await db.collection('entradas').orderBy('creado','desc').get();
+  const sel = document.getElementById('prod-lote');
+  sel.innerHTML = '<option value="">Seleccionar lote...</option>';
+  snap.docs.forEach(d => {
+    const v = d.data();
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = v.lote + ' — ' + (v.campoNombre||'') + ' (' + fmtKg(v.totalKg) + ')';
+    o.dataset.kg = v.totalKg;
+    o.dataset.lote = v.lote;
+    sel.appendChild(o);
+  });
+
+  // Cargar proveedores de fazón
+  const provSnap = await db.collection('proveedores').where('categoria','==','fabrica').get();
+  const selProv = document.getElementById('prod-fazon-prov');
+  selProv.innerHTML = '<option value="">Seleccionar...</option>';
+  provSnap.docs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = d.data().nombre;
+    selProv.appendChild(o);
+  });
+
+  // Cargar formatos
+  const fmtSnap = await db.collection('formatos').get();
+  formatosDisponibles = fmtSnap.docs.map(d => ({id:d.id,...d.data()}));
+
+  // Limpiar
+  document.getElementById('prod-fecha').valueAsDate = new Date();
+  document.getElementById('prod-fazon-fecha').valueAsDate = new Date();
+  document.getElementById('prod-kg-entrada').value = '';
+  document.getElementById('prod-fazon-precio').value = '';
+  document.getElementById('prod-fazon-num').value = '';
+  document.getElementById('prod-obs').value = '';
+  document.getElementById('formatos-prod-container').innerHTML = '';
+  agregarFormatoRow();
+  calcProduccion();
+  document.getElementById('modal-produccion').classList.add('show');
+}
+
+document.getElementById && document.addEventListener('change', function(e){
+  if(e.target && e.target.id === 'prod-lote'){
+    const opt = e.target.options[e.target.selectedIndex];
+    const kg = opt.dataset.kg || '';
+    if(kg) document.getElementById('prod-kg-entrada').value = parseFloat(kg).toFixed(2);
+    const lote = opt.dataset.lote || '—';
+    document.getElementById('prod-lote-preview').textContent = 'Lote: ' + lote;
+    calcProduccion();
+  }
+});
+
+function agregarFormatoRow(){
+  const container = document.getElementById('formatos-prod-container');
+  const opts = formatosDisponibles.map(f => 
+    `<option value="${f.id}" data-kg="${f.kgCaja}" data-nombre="${f.nombre}">${f.nombre} (${parseFloat(f.kgCaja).toFixed(2)} kg/u)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'formato-prod-row';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcProduccion()"><option value="">Seleccionar formato...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="0" min="0" step="1" oninput="calcProduccion()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcProduccion()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcProduccion(){
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const kgTotal = cant * kgPorU;
+    row.querySelectorAll('input[type="text"]')[0].value = kgPorU > 0 ? fmtKg(kgPorU) : '';
+    row.querySelectorAll('input[type="text"]')[1].value = kgTotal > 0 ? fmtKg(kgTotal) : '';
+    totalProd += kgTotal;
+  });
+
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const merma = kgEntrada - totalProd;
+  const mermaPorc = kgEntrada > 0 ? (merma/kgEntrada*100) : 0;
+
+  document.getElementById('prod-resumen-entrada').textContent = fmtKg(kgEntrada);
+  document.getElementById('prod-resumen-producido').textContent = fmtKg(totalProd);
+  document.getElementById('prod-resumen-merma').textContent = fmtKg(merma) + ' (' + mermaPorc.toFixed(2) + '%)';
+  document.getElementById('prod-resumen-merma').style.color = merma > 0 ? 'var(--amber)' : 'var(--g3)';
+
+  // Fazón
+  const precio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+  const tipo = document.getElementById('prod-fazon-tipo').value;
+  const neto = totalProd * precio;
+  const iva = tipo === 'C' ? 0 : neto * 0.21;
+  const total = neto + iva;
+
+  document.getElementById('fazon-kg').textContent = fmtKg(totalProd);
+  document.getElementById('fazon-neto').textContent = fmt(neto);
+  document.getElementById('fazon-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('fazon-total').textContent = fmt(total);
+}
+
+async function guardarProduccion(){
+  const loteId = document.getElementById('prod-lote').value;
+  const fecha = document.getElementById('prod-fecha').value;
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const fazonProvId = document.getElementById('prod-fazon-prov').value;
+  const fazonPrecio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+
+  if(!loteId || !fecha || !kgEntrada || !fazonProvId || !fazonPrecio){
+    toast('Completá los campos obligatorios','error'); return;
+  }
+
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  const formatos = [];
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    if(sel.value && cant > 0){
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre;
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const kgTotal = cant * kgPorU;
+      formatos.push({formatoId:sel.value, nombre, cantidad:cant, kgPorUnidad:kgPorU, kgTotal});
+      totalProd += kgTotal;
+    }
+  });
+
+  if(formatos.length === 0){toast('Agregá al menos un formato producido','error'); return;}
+
+  const loteOpt = document.getElementById('prod-lote').options[document.getElementById('prod-lote').selectedIndex];
+  const lote = loteOpt.dataset.lote || '';
+  const merma = kgEntrada - totalProd;
+  const fazonTipo = document.getElementById('prod-fazon-tipo').value;
+  const fazonNeto = totalProd * fazonPrecio;
+  const fazonIva = fazonTipo === 'C' ? 0 : fazonNeto * 0.21;
+
+  const provSnap = await db.collection('proveedores').doc(fazonProvId).get();
+
+  await db.collection('producciones').add({
+    loteEntradaId: loteId,
+    lote,
+    fecha,
+    kgEntrada,
+    kgProducido: totalProd,
+    merma,
+    mermaPorc: kgEntrada > 0 ? (merma/kgEntrada*100) : 0,
+    formatos,
+    fazonProveedorId: fazonProvId,
+    fazonProveedorNombre: provSnap.exists ? provSnap.data().nombre : '—',
+    fazonPrecioPorKg: fazonPrecio,
+    fazonTipo,
+    fazonNum: document.getElementById('prod-fazon-num').value.trim(),
+    fazonFecha: document.getElementById('prod-fazon-fecha').value,
+    fazonVto: document.getElementById('prod-fazon-vto').value,
+    fazonNeto,
+    fazonIva,
+    fazonTotal: fazonNeto + fazonIva,
+    estadoPagoFazon: 'pendiente',
+    obs: document.getElementById('prod-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-produccion');
+  toast('Producción guardada ✓');
+  cargarProducciones();
+}
+
+async function cargarProducciones(){
+  const snap = await db.collection('producciones').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-producciones');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Sin producciones registradas</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const formatsStr = (v.formatos||[]).map(f=>f.nombre+' x'+f.cantidad).join('<br>');
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${v.lote||'—'}</td>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmtKg(v.kgEntrada)}</td>
+      <td class="td-right">${fmtKg(v.kgProducido)}</td>
+      <td class="td-right" style="color:var(--amber)">${fmtKg(v.merma)} (${parseFloat(v.mermaPorc||0).toFixed(1)}%)</td>
+      <td style="font-size:12px">${formatsStr||'—'}</td>
+      <td>${v.fazonProveedorNombre||'—'}<br><span class="badge badge-${v.estadoPagoFazon==='pagada'?'green':'amber'}">${v.estadoPagoFazon||'pendiente'}</span></td>
+      <td class="td-right">${fmt(v.fazonNeto)}</td>
+      <td class="td-right">${fmt(v.fazonIva)}</td>
+      <td class="td-right fw-600">${fmt(v.fazonTotal)}</td>
+      <td><button class="btn-icon" onclick="eliminar('producciones','${d.id}',cargarProducciones)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js">
+// ══ PRODUCCIÓN ══
+let formatosDisponibles = [];
+
+async function abrirModalProduccion(){
+  // Cargar lotes disponibles desde entradas
+  const snap = await db.collection('entradas').orderBy('creado','desc').get();
+  const sel = document.getElementById('prod-lote');
+  sel.innerHTML = '<option value="">Seleccionar lote...</option>';
+  snap.docs.forEach(d => {
+    const v = d.data();
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = v.lote + ' — ' + (v.campoNombre||'') + ' (' + fmtKg(v.totalKg) + ')';
+    o.dataset.kg = v.totalKg;
+    o.dataset.lote = v.lote;
+    sel.appendChild(o);
+  });
+
+  // Cargar proveedores de fazón
+  const provSnap = await db.collection('proveedores').where('categoria','==','fabrica').get();
+  const selProv = document.getElementById('prod-fazon-prov');
+  selProv.innerHTML = '<option value="">Seleccionar...</option>';
+  provSnap.docs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = d.data().nombre;
+    selProv.appendChild(o);
+  });
+
+  // Cargar formatos
+  const fmtSnap = await db.collection('formatos').get();
+  formatosDisponibles = fmtSnap.docs.map(d => ({id:d.id,...d.data()}));
+
+  // Limpiar
+  document.getElementById('prod-fecha').valueAsDate = new Date();
+  document.getElementById('prod-fazon-fecha').valueAsDate = new Date();
+  document.getElementById('prod-kg-entrada').value = '';
+  document.getElementById('prod-fazon-precio').value = '';
+  document.getElementById('prod-fazon-num').value = '';
+  document.getElementById('prod-obs').value = '';
+  document.getElementById('formatos-prod-container').innerHTML = '';
+  agregarFormatoRow();
+  calcProduccion();
+  document.getElementById('modal-produccion').classList.add('show');
+}
+
+document.getElementById && document.addEventListener('change', function(e){
+  if(e.target && e.target.id === 'prod-lote'){
+    const opt = e.target.options[e.target.selectedIndex];
+    const kg = opt.dataset.kg || '';
+    if(kg) document.getElementById('prod-kg-entrada').value = parseFloat(kg).toFixed(2);
+    const lote = opt.dataset.lote || '—';
+    document.getElementById('prod-lote-preview').textContent = 'Lote: ' + lote;
+    calcProduccion();
+  }
+});
+
+function agregarFormatoRow(){
+  const container = document.getElementById('formatos-prod-container');
+  const opts = formatosDisponibles.map(f => 
+    `<option value="${f.id}" data-kg="${f.kgCaja}" data-nombre="${f.nombre}">${f.nombre} (${parseFloat(f.kgCaja).toFixed(2)} kg/u)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'formato-prod-row';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcProduccion()"><option value="">Seleccionar formato...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="0" min="0" step="1" oninput="calcProduccion()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcProduccion()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcProduccion(){
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const kgTotal = cant * kgPorU;
+    row.querySelectorAll('input[type="text"]')[0].value = kgPorU > 0 ? fmtKg(kgPorU) : '';
+    row.querySelectorAll('input[type="text"]')[1].value = kgTotal > 0 ? fmtKg(kgTotal) : '';
+    totalProd += kgTotal;
+  });
+
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const merma = kgEntrada - totalProd;
+  const mermaPorc = kgEntrada > 0 ? (merma/kgEntrada*100) : 0;
+
+  document.getElementById('prod-resumen-entrada').textContent = fmtKg(kgEntrada);
+  document.getElementById('prod-resumen-producido').textContent = fmtKg(totalProd);
+  document.getElementById('prod-resumen-merma').textContent = fmtKg(merma) + ' (' + mermaPorc.toFixed(2) + '%)';
+  document.getElementById('prod-resumen-merma').style.color = merma > 0 ? 'var(--amber)' : 'var(--g3)';
+
+  // Fazón
+  const precio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+  const tipo = document.getElementById('prod-fazon-tipo').value;
+  const neto = totalProd * precio;
+  const iva = tipo === 'C' ? 0 : neto * 0.21;
+  const total = neto + iva;
+
+  document.getElementById('fazon-kg').textContent = fmtKg(totalProd);
+  document.getElementById('fazon-neto').textContent = fmt(neto);
+  document.getElementById('fazon-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('fazon-total').textContent = fmt(total);
+}
+
+async function guardarProduccion(){
+  const loteId = document.getElementById('prod-lote').value;
+  const fecha = document.getElementById('prod-fecha').value;
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const fazonProvId = document.getElementById('prod-fazon-prov').value;
+  const fazonPrecio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+
+  if(!loteId || !fecha || !kgEntrada || !fazonProvId || !fazonPrecio){
+    toast('Completá los campos obligatorios','error'); return;
+  }
+
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  const formatos = [];
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    if(sel.value && cant > 0){
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre;
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const kgTotal = cant * kgPorU;
+      formatos.push({formatoId:sel.value, nombre, cantidad:cant, kgPorUnidad:kgPorU, kgTotal});
+      totalProd += kgTotal;
+    }
+  });
+
+  if(formatos.length === 0){toast('Agregá al menos un formato producido','error'); return;}
+
+  const loteOpt = document.getElementById('prod-lote').options[document.getElementById('prod-lote').selectedIndex];
+  const lote = loteOpt.dataset.lote || '';
+  const merma = kgEntrada - totalProd;
+  const fazonTipo = document.getElementById('prod-fazon-tipo').value;
+  const fazonNeto = totalProd * fazonPrecio;
+  const fazonIva = fazonTipo === 'C' ? 0 : fazonNeto * 0.21;
+
+  const provSnap = await db.collection('proveedores').doc(fazonProvId).get();
+
+  await db.collection('producciones').add({
+    loteEntradaId: loteId,
+    lote,
+    fecha,
+    kgEntrada,
+    kgProducido: totalProd,
+    merma,
+    mermaPorc: kgEntrada > 0 ? (merma/kgEntrada*100) : 0,
+    formatos,
+    fazonProveedorId: fazonProvId,
+    fazonProveedorNombre: provSnap.exists ? provSnap.data().nombre : '—',
+    fazonPrecioPorKg: fazonPrecio,
+    fazonTipo,
+    fazonNum: document.getElementById('prod-fazon-num').value.trim(),
+    fazonFecha: document.getElementById('prod-fazon-fecha').value,
+    fazonVto: document.getElementById('prod-fazon-vto').value,
+    fazonNeto,
+    fazonIva,
+    fazonTotal: fazonNeto + fazonIva,
+    estadoPagoFazon: 'pendiente',
+    obs: document.getElementById('prod-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-produccion');
+  toast('Producción guardada ✓');
+  cargarProducciones();
+}
+
+async function cargarProducciones(){
+  const snap = await db.collection('producciones').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-producciones');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Sin producciones registradas</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const formatsStr = (v.formatos||[]).map(f=>f.nombre+' x'+f.cantidad).join('<br>');
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${v.lote||'—'}</td>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmtKg(v.kgEntrada)}</td>
+      <td class="td-right">${fmtKg(v.kgProducido)}</td>
+      <td class="td-right" style="color:var(--amber)">${fmtKg(v.merma)} (${parseFloat(v.mermaPorc||0).toFixed(1)}%)</td>
+      <td style="font-size:12px">${formatsStr||'—'}</td>
+      <td>${v.fazonProveedorNombre||'—'}<br><span class="badge badge-${v.estadoPagoFazon==='pagada'?'green':'amber'}">${v.estadoPagoFazon||'pendiente'}</span></td>
+      <td class="td-right">${fmt(v.fazonNeto)}</td>
+      <td class="td-right">${fmt(v.fazonIva)}</td>
+      <td class="td-right fw-600">${fmt(v.fazonTotal)}</td>
+      <td><button class="btn-icon" onclick="eliminar('producciones','${d.id}',cargarProducciones)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -143,6 +749,8 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
 .field-senasa{display:none}.field-senasa.visible{display:block}
 .sp{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,0.4);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+.formato-prod-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:center;background:var(--cream);border-radius:8px;padding:10px 14px;border:1px solid var(--sand);margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -230,7 +838,32 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
 </div>
 
 <!-- ══ OTRAS PÁGINAS ══ -->
-<div class="page" id="page-produccion"><div class="page-header"><div class="page-title">Producción</div></div><div class="card"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Próximamente</div></div></div></div>
+<div class="page" id="page-produccion">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Producción</div><div class="page-sub">Registrá cada producción con merma, fazón y formatos</div></div>
+    <button class="btn btn-primary" onclick="abrirModalProduccion()">+ Nueva producción</button>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr>
+        <th>Lote entrada</th>
+        <th>Fecha</th>
+        <th class="td-right">Kg entrada</th>
+        <th class="td-right">Kg producido</th>
+        <th class="td-right">Merma</th>
+        <th>Formatos</th>
+        <th>Fazón</th>
+        <th class="td-right">Neto fazón</th>
+        <th class="td-right">IVA 21%</th>
+        <th class="td-right">Total fazón</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="body-producciones">
+        <tr><td colspan="11"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Sin producciones registradas</div><div class="empty-sub">Registrá la primera con el botón + Nueva producción</div></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="page" id="page-stock"><div class="page-header"><div class="page-title">Stock</div></div><div class="card"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Próximamente</div></div></div></div>
 <div class="page" id="page-logistica"><div class="page-header"><div class="page-title">Logística</div></div><div class="card"><div class="empty"><div class="empty-icon">🚚</div><div class="empty-text">Próximamente</div></div></div></div>
 <div class="page" id="page-ventas"><div class="page-header"><div class="page-title">Ventas</div></div><div class="card"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Próximamente</div></div></div></div>
@@ -441,6 +1074,73 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
 </div>
 
+
+<!-- ══ MODAL PRODUCCIÓN ══ -->
+<div class="modal-overlay" id="modal-produccion">
+  <div class="modal" style="max-width:780px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Nueva producción</div>
+        <div style="font-family:var(--font-m);font-size:13px;color:var(--g4);margin-top:4px" id="prod-lote-preview">Lote: —</div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal('modal-produccion')">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- DATOS GENERALES -->
+      <div class="section-title">Datos generales</div>
+      <div class="form-grid form-grid-3 mb-16">
+        <div><label class="form-label">Lote de entrada <span class="required">*</span></label><select class="form-select" id="prod-lote"><option value="">Seleccionar...</option></select></div>
+        <div><label class="form-label">Fecha producción <span class="required">*</span></label><input type="date" class="form-input" id="prod-fecha"></div>
+        <div><label class="form-label">Kg de carne que entran <span class="required">*</span></label><input type="number" class="form-input" id="prod-kg-entrada" placeholder="0.00" step="0.01" oninput="calcProduccion()"></div>
+      </div>
+
+      <!-- FORMATOS PRODUCIDOS -->
+      <div class="section-title">Formatos producidos</div>
+      <div class="corte-row-header" style="grid-template-columns:2fr 1fr 1fr 1fr auto">
+        <span>Formato</span><span>Cantidad (cajas/packs)</span><span>Kg por unidad</span><span>Kg total</span><span></span>
+      </div>
+      <div id="formatos-prod-container"></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="agregarFormatoRow()">+ Agregar formato</button>
+
+      <!-- MERMA -->
+      <div class="section-title" style="margin-top:20px">Resumen producción</div>
+      <div class="iva-box mb-16">
+        <div class="iva-row"><span class="iva-label">Kg que entran</span><span id="prod-resumen-entrada" class="fw-600">0.00 kg</span></div>
+        <div class="iva-row"><span class="iva-label">Kg producidos (total formatos)</span><span id="prod-resumen-producido">0.00 kg</span></div>
+        <div class="iva-row"><span class="iva-label">Merma</span><span id="prod-resumen-merma" style="color:var(--amber)">0.00 kg (0.00%)</span></div>
+      </div>
+
+      <!-- FAZÓN -->
+      <div class="section-title">Fazón</div>
+      <div class="form-grid form-grid-3 mb-16">
+        <div><label class="form-label">Proveedor fazón <span class="required">*</span></label><select class="form-select" id="prod-fazon-prov"><option value="">Seleccionar...</option></select></div>
+        <div><label class="form-label">$ por kg producido (sin IVA) <span class="required">*</span></label><input type="number" class="form-input" id="prod-fazon-precio" placeholder="0.00" step="0.01" oninput="calcProduccion()"></div>
+        <div><label class="form-label">Tipo comprobante</label><select class="form-select" id="prod-fazon-tipo" onchange="calcProduccion()"><option value="A">Factura A (IVA 21%)</option><option value="B">Factura B (IVA 21%)</option><option value="C">Factura C (sin IVA)</option></select></div>
+      </div>
+      <div class="form-grid form-grid-3 mb-16">
+        <div><label class="form-label">N° Factura</label><input type="text" class="form-input" id="prod-fazon-num" placeholder="0001-00012345"></div>
+        <div><label class="form-label">Fecha factura</label><input type="date" class="form-input" id="prod-fazon-fecha"></div>
+        <div><label class="form-label">Vencimiento pago</label><input type="date" class="form-input" id="prod-fazon-vto"></div>
+      </div>
+
+      <!-- RESUMEN FAZÓN -->
+      <div class="iva-box">
+        <div class="iva-row"><span class="iva-label">Kg producidos</span><span id="fazon-kg">0.00 kg</span></div>
+        <div class="iva-row"><span class="iva-label">Neto fazón (sin IVA)</span><span id="fazon-neto">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">IVA 21%</span><span id="fazon-iva">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">Total fazón</span><span id="fazon-total">$ 0.00</span></div>
+      </div>
+
+      <div style="margin-top:16px"><label class="form-label">Observaciones</label><textarea class="form-textarea" id="prod-obs" placeholder="Notas adicionales..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modal-produccion')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarProduccion()">Guardar producción</button>
+    </div>
+  </div>
+</div>
+
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",
@@ -462,6 +1162,7 @@ auth.onAuthStateChanged(user=>{
 async function init(){
   await Promise.all([cargarProveedores(),cargarClientes(),cargarCampos(),cargarFrigorificos(),cargarCortes(),cargarFormatos()]);
   cargarEntradas();
+  cargarProducciones();
 }
 
 // ── NAV ──
@@ -786,6 +1487,7 @@ async function guardarEntrada(){
     creado:firebase.firestore.FieldValue.serverTimestamp()
   });
   cerrarModal('modal-entrada');toast('Entrada guardada ✓');cargarEntradas();
+  cargarProducciones();
 }
 
 async function cargarEntradas(){
@@ -810,6 +1512,208 @@ async function cargarEntradas(){
     </tr>`;
   }).join('');
 }
+
+// ══ PRODUCCIÓN ══
+let formatosDisponibles = [];
+
+async function abrirModalProduccion(){
+  // Cargar lotes disponibles desde entradas
+  const snap = await db.collection('entradas').orderBy('creado','desc').get();
+  const sel = document.getElementById('prod-lote');
+  sel.innerHTML = '<option value="">Seleccionar lote...</option>';
+  snap.docs.forEach(d => {
+    const v = d.data();
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = v.lote + ' — ' + (v.campoNombre||'') + ' (' + fmtKg(v.totalKg) + ')';
+    o.dataset.kg = v.totalKg;
+    o.dataset.lote = v.lote;
+    sel.appendChild(o);
+  });
+
+  // Cargar proveedores de fazón
+  const provSnap = await db.collection('proveedores').where('categoria','==','fabrica').get();
+  const selProv = document.getElementById('prod-fazon-prov');
+  selProv.innerHTML = '<option value="">Seleccionar...</option>';
+  provSnap.docs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = d.data().nombre;
+    selProv.appendChild(o);
+  });
+
+  // Cargar formatos
+  const fmtSnap = await db.collection('formatos').get();
+  formatosDisponibles = fmtSnap.docs.map(d => ({id:d.id,...d.data()}));
+
+  // Limpiar
+  document.getElementById('prod-fecha').valueAsDate = new Date();
+  document.getElementById('prod-fazon-fecha').valueAsDate = new Date();
+  document.getElementById('prod-kg-entrada').value = '';
+  document.getElementById('prod-fazon-precio').value = '';
+  document.getElementById('prod-fazon-num').value = '';
+  document.getElementById('prod-obs').value = '';
+  document.getElementById('formatos-prod-container').innerHTML = '';
+  agregarFormatoRow();
+  calcProduccion();
+  document.getElementById('modal-produccion').classList.add('show');
+}
+
+document.getElementById && document.addEventListener('change', function(e){
+  if(e.target && e.target.id === 'prod-lote'){
+    const opt = e.target.options[e.target.selectedIndex];
+    const kg = opt.dataset.kg || '';
+    if(kg) document.getElementById('prod-kg-entrada').value = parseFloat(kg).toFixed(2);
+    const lote = opt.dataset.lote || '—';
+    document.getElementById('prod-lote-preview').textContent = 'Lote: ' + lote;
+    calcProduccion();
+  }
+});
+
+function agregarFormatoRow(){
+  const container = document.getElementById('formatos-prod-container');
+  const opts = formatosDisponibles.map(f => 
+    `<option value="${f.id}" data-kg="${f.kgCaja}" data-nombre="${f.nombre}">${f.nombre} (${parseFloat(f.kgCaja).toFixed(2)} kg/u)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'formato-prod-row';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcProduccion()"><option value="">Seleccionar formato...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="0" min="0" step="1" oninput="calcProduccion()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcProduccion()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcProduccion(){
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const kgTotal = cant * kgPorU;
+    row.querySelectorAll('input[type="text"]')[0].value = kgPorU > 0 ? fmtKg(kgPorU) : '';
+    row.querySelectorAll('input[type="text"]')[1].value = kgTotal > 0 ? fmtKg(kgTotal) : '';
+    totalProd += kgTotal;
+  });
+
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const merma = kgEntrada - totalProd;
+  const mermaPorc = kgEntrada > 0 ? (merma/kgEntrada*100) : 0;
+
+  document.getElementById('prod-resumen-entrada').textContent = fmtKg(kgEntrada);
+  document.getElementById('prod-resumen-producido').textContent = fmtKg(totalProd);
+  document.getElementById('prod-resumen-merma').textContent = fmtKg(merma) + ' (' + mermaPorc.toFixed(2) + '%)';
+  document.getElementById('prod-resumen-merma').style.color = merma > 0 ? 'var(--amber)' : 'var(--g3)';
+
+  // Fazón
+  const precio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+  const tipo = document.getElementById('prod-fazon-tipo').value;
+  const neto = totalProd * precio;
+  const iva = tipo === 'C' ? 0 : neto * 0.21;
+  const total = neto + iva;
+
+  document.getElementById('fazon-kg').textContent = fmtKg(totalProd);
+  document.getElementById('fazon-neto').textContent = fmt(neto);
+  document.getElementById('fazon-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('fazon-total').textContent = fmt(total);
+}
+
+async function guardarProduccion(){
+  const loteId = document.getElementById('prod-lote').value;
+  const fecha = document.getElementById('prod-fecha').value;
+  const kgEntrada = parseFloat(document.getElementById('prod-kg-entrada').value) || 0;
+  const fazonProvId = document.getElementById('prod-fazon-prov').value;
+  const fazonPrecio = parseFloat(document.getElementById('prod-fazon-precio').value) || 0;
+
+  if(!loteId || !fecha || !kgEntrada || !fazonProvId || !fazonPrecio){
+    toast('Completá los campos obligatorios','error'); return;
+  }
+
+  const rows = document.querySelectorAll('#formatos-prod-container .formato-prod-row');
+  const formatos = [];
+  let totalProd = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
+    if(sel.value && cant > 0){
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre;
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const kgTotal = cant * kgPorU;
+      formatos.push({formatoId:sel.value, nombre, cantidad:cant, kgPorUnidad:kgPorU, kgTotal});
+      totalProd += kgTotal;
+    }
+  });
+
+  if(formatos.length === 0){toast('Agregá al menos un formato producido','error'); return;}
+
+  const loteOpt = document.getElementById('prod-lote').options[document.getElementById('prod-lote').selectedIndex];
+  const lote = loteOpt.dataset.lote || '';
+  const merma = kgEntrada - totalProd;
+  const fazonTipo = document.getElementById('prod-fazon-tipo').value;
+  const fazonNeto = totalProd * fazonPrecio;
+  const fazonIva = fazonTipo === 'C' ? 0 : fazonNeto * 0.21;
+
+  const provSnap = await db.collection('proveedores').doc(fazonProvId).get();
+
+  await db.collection('producciones').add({
+    loteEntradaId: loteId,
+    lote,
+    fecha,
+    kgEntrada,
+    kgProducido: totalProd,
+    merma,
+    mermaPorc: kgEntrada > 0 ? (merma/kgEntrada*100) : 0,
+    formatos,
+    fazonProveedorId: fazonProvId,
+    fazonProveedorNombre: provSnap.exists ? provSnap.data().nombre : '—',
+    fazonPrecioPorKg: fazonPrecio,
+    fazonTipo,
+    fazonNum: document.getElementById('prod-fazon-num').value.trim(),
+    fazonFecha: document.getElementById('prod-fazon-fecha').value,
+    fazonVto: document.getElementById('prod-fazon-vto').value,
+    fazonNeto,
+    fazonIva,
+    fazonTotal: fazonNeto + fazonIva,
+    estadoPagoFazon: 'pendiente',
+    obs: document.getElementById('prod-obs').value.trim(),
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-produccion');
+  toast('Producción guardada ✓');
+  cargarProducciones();
+}
+
+async function cargarProducciones(){
+  const snap = await db.collection('producciones').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-producciones');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">Sin producciones registradas</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const formatsStr = (v.formatos||[]).map(f=>f.nombre+' x'+f.cantidad).join('<br>');
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${v.lote||'—'}</td>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmtKg(v.kgEntrada)}</td>
+      <td class="td-right">${fmtKg(v.kgProducido)}</td>
+      <td class="td-right" style="color:var(--amber)">${fmtKg(v.merma)} (${parseFloat(v.mermaPorc||0).toFixed(1)}%)</td>
+      <td style="font-size:12px">${formatsStr||'—'}</td>
+      <td>${v.fazonProveedorNombre||'—'}<br><span class="badge badge-${v.estadoPagoFazon==='pagada'?'green':'amber'}">${v.estadoPagoFazon||'pendiente'}</span></td>
+      <td class="td-right">${fmt(v.fazonNeto)}</td>
+      <td class="td-right">${fmt(v.fazonIva)}</td>
+      <td class="td-right fw-600">${fmt(v.fazonTotal)}</td>
+      <td><button class="btn-icon" onclick="eliminar('producciones','${d.id}',cargarProducciones)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
 </script>
 </body>
 </html>
