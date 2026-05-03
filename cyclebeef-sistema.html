@@ -180,6 +180,7 @@ async function guardarProduccion(){
   cerrarModal('modal-produccion');
   toast('Producción guardada ✓');
   cargarProducciones();
+  cargarStock();
 }
 
 async function cargarProducciones(){
@@ -207,6 +208,105 @@ async function cargarProducciones(){
     </tr>`;
   }).join('');
 }
+
+
+// ══ STOCK ══
+async function cargarStock(){
+  // El stock se calcula dinámicamente desde producciones
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  // También necesitamos saber qué se despachó (ventas/logística - por ahora 0)
+  
+  const stockItems = [];
+  const formatoTotales = {};
+
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      // Por ahora el disponible es lo producido (se restará cuando hagamos logística)
+      const key = f.formatoId + '_' + v.lote;
+      stockItems.push({
+        lote: v.lote,
+        fecha: v.fecha,
+        formatoId: f.formatoId,
+        formatoNombre: f.nombre,
+        cantidadProducida: f.cantidad,
+        cantidadDisponible: f.cantidad, // se resta al despachar
+        kgPorUnidad: f.kgPorUnidad,
+        kgTotal: f.kgTotal,
+        produccionId: d.id
+      });
+      if(!formatoTotales[f.formatoId]){
+        formatoTotales[f.formatoId] = {nombre:f.nombre, cajas:0, kg:0};
+      }
+      formatoTotales[f.formatoId].cajas += f.cantidad;
+      formatoTotales[f.formatoId].kg += f.kgTotal;
+    });
+  });
+
+  // Llenar filtro de formatos
+  const sel = document.getElementById('stock-filtro-formato');
+  const filtroActual = sel.value;
+  sel.innerHTML = '<option value="">Todos los formatos</option>';
+  Object.entries(formatoTotales).forEach(([id, f]) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = f.nombre;
+    sel.appendChild(o);
+  });
+  sel.value = filtroActual;
+
+  // Cards resumen
+  const cardsEl = document.getElementById('stock-cards');
+  let totalCajas = 0, totalKg = 0;
+  Object.values(formatoTotales).forEach(f => { totalCajas += f.cajas; totalKg += f.kg; });
+  
+  const formatsCards = Object.entries(formatoTotales).slice(0,2).map(([id,f]) => `
+    <div class="stock-card">
+      <div class="stock-card-label">${f.nombre}</div>
+      <div class="stock-card-val">${f.cajas}</div>
+      <div class="stock-card-sub">${fmtKg(f.kg)}</div>
+    </div>
+  `).join('');
+
+  cardsEl.innerHTML = `
+    <div class="stock-card">
+      <div class="stock-card-label">Total unidades</div>
+      <div class="stock-card-val">${totalCajas}</div>
+      <div class="stock-card-sub">${fmtKg(totalKg)}</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Lotes en stock</div>
+      <div class="stock-card-val">${prodSnap.size}</div>
+      <div class="stock-card-sub">en inventario</div>
+    </div>
+    ${formatsCards}
+  `;
+
+  // Tabla
+  const filtroFormato = document.getElementById('stock-filtro-formato').value;
+  const filtered = filtroFormato ? stockItems.filter(i => i.formatoId === filtroFormato) : stockItems;
+
+  const tbody = document.getElementById('body-stock');
+  if(filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Sin stock disponible</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((item,i) => {
+    const diasDesde = item.fecha ? Math.floor((new Date()-new Date(item.fecha+'T12:00:00'))/(1000*60*60*24)) : 0;
+    const estado = diasDesde > 60 ? 'red' : diasDesde > 30 ? 'amber' : 'green';
+    const estadoLabel = diasDesde > 60 ? 'Prioritario' : diasDesde > 30 ? 'Atención' : 'OK';
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${item.lote}</td>
+      <td>${item.fecha ? new Date(item.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="text-sm text-muted">${diasDesde} días</span></td>
+      <td>${item.formatoNombre}</td>
+      <td class="td-right fw-600">${item.cantidadDisponible}</td>
+      <td class="td-right">${fmtKg(item.cantidadDisponible * item.kgPorUnidad)}</td>
+      <td><span class="badge badge-${estado}">${estadoLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarStock(){ cargarStock(); }
 
 </script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js">
@@ -383,6 +483,7 @@ async function guardarProduccion(){
   cerrarModal('modal-produccion');
   toast('Producción guardada ✓');
   cargarProducciones();
+  cargarStock();
 }
 
 async function cargarProducciones(){
@@ -410,6 +511,105 @@ async function cargarProducciones(){
     </tr>`;
   }).join('');
 }
+
+
+// ══ STOCK ══
+async function cargarStock(){
+  // El stock se calcula dinámicamente desde producciones
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  // También necesitamos saber qué se despachó (ventas/logística - por ahora 0)
+  
+  const stockItems = [];
+  const formatoTotales = {};
+
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      // Por ahora el disponible es lo producido (se restará cuando hagamos logística)
+      const key = f.formatoId + '_' + v.lote;
+      stockItems.push({
+        lote: v.lote,
+        fecha: v.fecha,
+        formatoId: f.formatoId,
+        formatoNombre: f.nombre,
+        cantidadProducida: f.cantidad,
+        cantidadDisponible: f.cantidad, // se resta al despachar
+        kgPorUnidad: f.kgPorUnidad,
+        kgTotal: f.kgTotal,
+        produccionId: d.id
+      });
+      if(!formatoTotales[f.formatoId]){
+        formatoTotales[f.formatoId] = {nombre:f.nombre, cajas:0, kg:0};
+      }
+      formatoTotales[f.formatoId].cajas += f.cantidad;
+      formatoTotales[f.formatoId].kg += f.kgTotal;
+    });
+  });
+
+  // Llenar filtro de formatos
+  const sel = document.getElementById('stock-filtro-formato');
+  const filtroActual = sel.value;
+  sel.innerHTML = '<option value="">Todos los formatos</option>';
+  Object.entries(formatoTotales).forEach(([id, f]) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = f.nombre;
+    sel.appendChild(o);
+  });
+  sel.value = filtroActual;
+
+  // Cards resumen
+  const cardsEl = document.getElementById('stock-cards');
+  let totalCajas = 0, totalKg = 0;
+  Object.values(formatoTotales).forEach(f => { totalCajas += f.cajas; totalKg += f.kg; });
+  
+  const formatsCards = Object.entries(formatoTotales).slice(0,2).map(([id,f]) => `
+    <div class="stock-card">
+      <div class="stock-card-label">${f.nombre}</div>
+      <div class="stock-card-val">${f.cajas}</div>
+      <div class="stock-card-sub">${fmtKg(f.kg)}</div>
+    </div>
+  `).join('');
+
+  cardsEl.innerHTML = `
+    <div class="stock-card">
+      <div class="stock-card-label">Total unidades</div>
+      <div class="stock-card-val">${totalCajas}</div>
+      <div class="stock-card-sub">${fmtKg(totalKg)}</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Lotes en stock</div>
+      <div class="stock-card-val">${prodSnap.size}</div>
+      <div class="stock-card-sub">en inventario</div>
+    </div>
+    ${formatsCards}
+  `;
+
+  // Tabla
+  const filtroFormato = document.getElementById('stock-filtro-formato').value;
+  const filtered = filtroFormato ? stockItems.filter(i => i.formatoId === filtroFormato) : stockItems;
+
+  const tbody = document.getElementById('body-stock');
+  if(filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Sin stock disponible</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((item,i) => {
+    const diasDesde = item.fecha ? Math.floor((new Date()-new Date(item.fecha+'T12:00:00'))/(1000*60*60*24)) : 0;
+    const estado = diasDesde > 60 ? 'red' : diasDesde > 30 ? 'amber' : 'green';
+    const estadoLabel = diasDesde > 60 ? 'Prioritario' : diasDesde > 30 ? 'Atención' : 'OK';
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${item.lote}</td>
+      <td>${item.fecha ? new Date(item.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="text-sm text-muted">${diasDesde} días</span></td>
+      <td>${item.formatoNombre}</td>
+      <td class="td-right fw-600">${item.cantidadDisponible}</td>
+      <td class="td-right">${fmtKg(item.cantidadDisponible * item.kgPorUnidad)}</td>
+      <td><span class="badge badge-${estado}">${estadoLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarStock(){ cargarStock(); }
 
 </script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js">
@@ -586,6 +786,7 @@ async function guardarProduccion(){
   cerrarModal('modal-produccion');
   toast('Producción guardada ✓');
   cargarProducciones();
+  cargarStock();
 }
 
 async function cargarProducciones(){
@@ -613,6 +814,105 @@ async function cargarProducciones(){
     </tr>`;
   }).join('');
 }
+
+
+// ══ STOCK ══
+async function cargarStock(){
+  // El stock se calcula dinámicamente desde producciones
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  // También necesitamos saber qué se despachó (ventas/logística - por ahora 0)
+  
+  const stockItems = [];
+  const formatoTotales = {};
+
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      // Por ahora el disponible es lo producido (se restará cuando hagamos logística)
+      const key = f.formatoId + '_' + v.lote;
+      stockItems.push({
+        lote: v.lote,
+        fecha: v.fecha,
+        formatoId: f.formatoId,
+        formatoNombre: f.nombre,
+        cantidadProducida: f.cantidad,
+        cantidadDisponible: f.cantidad, // se resta al despachar
+        kgPorUnidad: f.kgPorUnidad,
+        kgTotal: f.kgTotal,
+        produccionId: d.id
+      });
+      if(!formatoTotales[f.formatoId]){
+        formatoTotales[f.formatoId] = {nombre:f.nombre, cajas:0, kg:0};
+      }
+      formatoTotales[f.formatoId].cajas += f.cantidad;
+      formatoTotales[f.formatoId].kg += f.kgTotal;
+    });
+  });
+
+  // Llenar filtro de formatos
+  const sel = document.getElementById('stock-filtro-formato');
+  const filtroActual = sel.value;
+  sel.innerHTML = '<option value="">Todos los formatos</option>';
+  Object.entries(formatoTotales).forEach(([id, f]) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = f.nombre;
+    sel.appendChild(o);
+  });
+  sel.value = filtroActual;
+
+  // Cards resumen
+  const cardsEl = document.getElementById('stock-cards');
+  let totalCajas = 0, totalKg = 0;
+  Object.values(formatoTotales).forEach(f => { totalCajas += f.cajas; totalKg += f.kg; });
+  
+  const formatsCards = Object.entries(formatoTotales).slice(0,2).map(([id,f]) => `
+    <div class="stock-card">
+      <div class="stock-card-label">${f.nombre}</div>
+      <div class="stock-card-val">${f.cajas}</div>
+      <div class="stock-card-sub">${fmtKg(f.kg)}</div>
+    </div>
+  `).join('');
+
+  cardsEl.innerHTML = `
+    <div class="stock-card">
+      <div class="stock-card-label">Total unidades</div>
+      <div class="stock-card-val">${totalCajas}</div>
+      <div class="stock-card-sub">${fmtKg(totalKg)}</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Lotes en stock</div>
+      <div class="stock-card-val">${prodSnap.size}</div>
+      <div class="stock-card-sub">en inventario</div>
+    </div>
+    ${formatsCards}
+  `;
+
+  // Tabla
+  const filtroFormato = document.getElementById('stock-filtro-formato').value;
+  const filtered = filtroFormato ? stockItems.filter(i => i.formatoId === filtroFormato) : stockItems;
+
+  const tbody = document.getElementById('body-stock');
+  if(filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Sin stock disponible</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((item,i) => {
+    const diasDesde = item.fecha ? Math.floor((new Date()-new Date(item.fecha+'T12:00:00'))/(1000*60*60*24)) : 0;
+    const estado = diasDesde > 60 ? 'red' : diasDesde > 30 ? 'amber' : 'green';
+    const estadoLabel = diasDesde > 60 ? 'Prioritario' : diasDesde > 30 ? 'Atención' : 'OK';
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${item.lote}</td>
+      <td>${item.fecha ? new Date(item.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="text-sm text-muted">${diasDesde} días</span></td>
+      <td>${item.formatoNombre}</td>
+      <td class="td-right fw-600">${item.cantidadDisponible}</td>
+      <td class="td-right">${fmtKg(item.cantidadDisponible * item.kgPorUnidad)}</td>
+      <td><span class="badge badge-${estado}">${estadoLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarStock(){ cargarStock(); }
 
 </script>
 <style>
@@ -751,6 +1051,11 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 .formato-prod-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:center;background:var(--cream);border-radius:8px;padding:10px 14px;border:1px solid var(--sand);margin-bottom:8px}
+
+.stock-card{background:white;border-radius:12px;border:1px solid var(--sand);padding:20px}
+.stock-card-label{font-family:var(--font-h);font-size:10px;font-weight:500;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.stock-card-val{font-family:var(--font-h);font-size:28px;font-weight:700;color:var(--g2);letter-spacing:-0.5px}
+.stock-card-sub{font-size:12px;color:var(--muted);margin-top:4px}
 </style>
 </head>
 <body>
@@ -864,7 +1169,38 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     </table>
   </div>
 </div>
-<div class="page" id="page-stock"><div class="page-header"><div class="page-title">Stock</div></div><div class="card"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Próximamente</div></div></div></div>
+<div class="page" id="page-stock">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Stock</div><div class="page-sub">Inventario disponible por lote y formato — FIFO</div></div>
+    <div style="display:flex;gap:10px">
+      <select class="form-select" id="stock-filtro-formato" onchange="filtrarStock()" style="width:220px">
+        <option value="">Todos los formatos</option>
+      </select>
+      <button class="btn btn-secondary" onclick="cargarStock()">↻ Actualizar</button>
+    </div>
+  </div>
+
+  <!-- RESUMEN CARDS -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px" id="stock-cards">
+  </div>
+
+  <!-- TABLA DETALLE -->
+  <div class="card table-wrap">
+    <table>
+      <thead><tr>
+        <th>Lote</th>
+        <th>Fecha producción</th>
+        <th>Formato</th>
+        <th class="td-right">Cajas/Packs disponibles</th>
+        <th class="td-right">Kg disponibles</th>
+        <th>Estado</th>
+      </tr></thead>
+      <tbody id="body-stock">
+        <tr><td colspan="6"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Sin stock disponible</div><div class="empty-sub">El stock se genera automáticamente al registrar producciones</div></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="page" id="page-logistica"><div class="page-header"><div class="page-title">Logística</div></div><div class="card"><div class="empty"><div class="empty-icon">🚚</div><div class="empty-text">Próximamente</div></div></div></div>
 <div class="page" id="page-ventas"><div class="page-header"><div class="page-title">Ventas</div></div><div class="card"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Próximamente</div></div></div></div>
 <div class="page" id="page-cobros"><div class="page-header"><div class="page-title">Cobros y pagos</div></div><div class="card"><div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Próximamente</div></div></div></div>
@@ -1163,6 +1499,7 @@ async function init(){
   await Promise.all([cargarProveedores(),cargarClientes(),cargarCampos(),cargarFrigorificos(),cargarCortes(),cargarFormatos()]);
   cargarEntradas();
   cargarProducciones();
+  cargarStock();
 }
 
 // ── NAV ──
@@ -1488,6 +1825,7 @@ async function guardarEntrada(){
   });
   cerrarModal('modal-entrada');toast('Entrada guardada ✓');cargarEntradas();
   cargarProducciones();
+  cargarStock();
 }
 
 async function cargarEntradas(){
@@ -1686,6 +2024,7 @@ async function guardarProduccion(){
   cerrarModal('modal-produccion');
   toast('Producción guardada ✓');
   cargarProducciones();
+  cargarStock();
 }
 
 async function cargarProducciones(){
@@ -1713,6 +2052,105 @@ async function cargarProducciones(){
     </tr>`;
   }).join('');
 }
+
+
+// ══ STOCK ══
+async function cargarStock(){
+  // El stock se calcula dinámicamente desde producciones
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  // También necesitamos saber qué se despachó (ventas/logística - por ahora 0)
+  
+  const stockItems = [];
+  const formatoTotales = {};
+
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      // Por ahora el disponible es lo producido (se restará cuando hagamos logística)
+      const key = f.formatoId + '_' + v.lote;
+      stockItems.push({
+        lote: v.lote,
+        fecha: v.fecha,
+        formatoId: f.formatoId,
+        formatoNombre: f.nombre,
+        cantidadProducida: f.cantidad,
+        cantidadDisponible: f.cantidad, // se resta al despachar
+        kgPorUnidad: f.kgPorUnidad,
+        kgTotal: f.kgTotal,
+        produccionId: d.id
+      });
+      if(!formatoTotales[f.formatoId]){
+        formatoTotales[f.formatoId] = {nombre:f.nombre, cajas:0, kg:0};
+      }
+      formatoTotales[f.formatoId].cajas += f.cantidad;
+      formatoTotales[f.formatoId].kg += f.kgTotal;
+    });
+  });
+
+  // Llenar filtro de formatos
+  const sel = document.getElementById('stock-filtro-formato');
+  const filtroActual = sel.value;
+  sel.innerHTML = '<option value="">Todos los formatos</option>';
+  Object.entries(formatoTotales).forEach(([id, f]) => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = f.nombre;
+    sel.appendChild(o);
+  });
+  sel.value = filtroActual;
+
+  // Cards resumen
+  const cardsEl = document.getElementById('stock-cards');
+  let totalCajas = 0, totalKg = 0;
+  Object.values(formatoTotales).forEach(f => { totalCajas += f.cajas; totalKg += f.kg; });
+  
+  const formatsCards = Object.entries(formatoTotales).slice(0,2).map(([id,f]) => `
+    <div class="stock-card">
+      <div class="stock-card-label">${f.nombre}</div>
+      <div class="stock-card-val">${f.cajas}</div>
+      <div class="stock-card-sub">${fmtKg(f.kg)}</div>
+    </div>
+  `).join('');
+
+  cardsEl.innerHTML = `
+    <div class="stock-card">
+      <div class="stock-card-label">Total unidades</div>
+      <div class="stock-card-val">${totalCajas}</div>
+      <div class="stock-card-sub">${fmtKg(totalKg)}</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Lotes en stock</div>
+      <div class="stock-card-val">${prodSnap.size}</div>
+      <div class="stock-card-sub">en inventario</div>
+    </div>
+    ${formatsCards}
+  `;
+
+  // Tabla
+  const filtroFormato = document.getElementById('stock-filtro-formato').value;
+  const filtered = filtroFormato ? stockItems.filter(i => i.formatoId === filtroFormato) : stockItems;
+
+  const tbody = document.getElementById('body-stock');
+  if(filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Sin stock disponible</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((item,i) => {
+    const diasDesde = item.fecha ? Math.floor((new Date()-new Date(item.fecha+'T12:00:00'))/(1000*60*60*24)) : 0;
+    const estado = diasDesde > 60 ? 'red' : diasDesde > 30 ? 'amber' : 'green';
+    const estadoLabel = diasDesde > 60 ? 'Prioritario' : diasDesde > 30 ? 'Atención' : 'OK';
+    return `<tr>
+      <td class="td-mono fw-600" style="color:var(--g2)">${item.lote}</td>
+      <td>${item.fecha ? new Date(item.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="text-sm text-muted">${diasDesde} días</span></td>
+      <td>${item.formatoNombre}</td>
+      <td class="td-right fw-600">${item.cantidadDisponible}</td>
+      <td class="td-right">${fmtKg(item.cantidadDisponible * item.kgPorUnidad)}</td>
+      <td><span class="badge badge-${estado}">${estadoLabel}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarStock(){ cargarStock(); }
 
 </script>
 </body>
