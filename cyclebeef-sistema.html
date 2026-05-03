@@ -625,7 +625,7 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <div id="cf-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:24px"></div>
   <div class="card table-wrap">
     <table><thead><tr>
-      <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+      <th>Categoría</th><th>Descripción</th><th>Cond. IVA</th><th>Monto</th><th>CCSS</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
     </tr></thead><tbody id="body-costosfijos"></tbody></table>
   </div>
 </div>
@@ -2727,12 +2727,51 @@ function cambiarTabCheques(tipo, el){
         </div>
         <div><label class="form-label">Descripción</label><input type="text" class="form-input" id="cf-descripcion" placeholder="Detalle"></div>
       </div>
+      <!-- Condición IVA — visible siempre -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><label class="form-label">Condición de IVA *</label>
+          <select class="form-select" id="cf-cond-iva" onchange="toggleCfIva()">
+            <option value="">Seleccionar...</option>
+            <option value="ri">Responsable Inscripto</option>
+            <option value="monotributo">Monotributo</option>
+            <option value="exento">Exento</option>
+            <option value="no_aplica">No aplica (personal / sin factura)</option>
+          </select>
+        </div>
+        <div id="cf-campo-tasa-iva">
+          <label class="form-label">Tasa IVA</label>
+          <select class="form-select" id="cf-tasa-iva">
+            <option value="0">Sin IVA / No aplica</option>
+            <option value="10.5">10.5%</option>
+            <option value="21">21%</option>
+            <option value="27">27%</option>
+          </select>
+        </div>
+      </div>
+      <!-- Empleado — solo para Personal -->
       <div id="cf-campo-empleado" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div><label class="form-label">Nombre empleado</label><input type="text" class="form-input" id="cf-empleado" placeholder="Juan García"></div>
         <div><label class="form-label">CUIL</label><input type="text" class="form-input" id="cf-cuil" placeholder="20-12345678-9"></div>
       </div>
+      <!-- CCSS — solo para Personal -->
+      <div id="cf-campo-ccss" style="display:none;background:var(--cream);border-radius:8px;padding:14px 18px;font-size:13px">
+        <div style="font-weight:600;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px">Cargas sociales del empleador (CCSS)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div><label class="form-label" style="font-size:9px">Jubilación patronal %</label><input type="number" class="form-input" id="cf-ccss-jub" placeholder="10.17" step="0.01" oninput="calcCCSS()"></div>
+          <div><label class="form-label" style="font-size:9px">Obra social %</label><input type="number" class="form-input" id="cf-ccss-os" placeholder="5" step="0.01" oninput="calcCCSS()"></div>
+          <div><label class="form-label" style="font-size:9px">ART %</label><input type="number" class="form-input" id="cf-ccss-art" placeholder="1.5" step="0.01" oninput="calcCCSS()"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--sand)">
+          <span style="color:var(--muted)">Total CCSS estimado</span>
+          <span id="cf-ccss-total" style="font-family:var(--font-m);font-weight:700;color:var(--g2)">$0,00</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span style="font-size:11px;color:var(--muted)">Costo total empleador (bruto + CCSS)</span>
+          <span id="cf-ccss-costo-total" style="font-size:11px;font-family:var(--font-m);color:var(--muted)">$0,00</span>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-        <div><label class="form-label">Monto *</label><input type="number" class="form-input" id="cf-monto" placeholder="0"></div>
+        <div><label class="form-label">Monto *</label><input type="number" class="form-input" id="cf-monto" placeholder="0" oninput="calcCCSS()"></div>
         <div><label class="form-label">Período</label>
           <select class="form-select" id="cf-periodo">
             <option value="mensual">Mensual</option>
@@ -2830,25 +2869,68 @@ function abrirModalCostoFijo(){
   document.getElementById('cf-categoria').value='personal';
   document.getElementById('cf-periodo').value='mensual';
   document.getElementById('cf-estado').value='pendiente';
+  document.getElementById('cf-cond-iva').value='no_aplica';
+  document.getElementById('cf-tasa-iva').value='0';
+  ['cf-ccss-jub','cf-ccss-os','cf-ccss-art'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  calcCCSS();
   toggleCfPersonal();
+  toggleCfIva();
   document.getElementById('modal-costofijo').classList.add('show');
 }
 function toggleCfPersonal(){
   const cat=document.getElementById('cf-categoria').value;
-  const el=document.getElementById('cf-campo-empleado');
-  if(el) el.style.display=cat==='personal'?'grid':'none';
+  const elEmp=document.getElementById('cf-campo-empleado');
+  const elCcss=document.getElementById('cf-campo-ccss');
+  const condIva=document.getElementById('cf-cond-iva');
+  if(elEmp) elEmp.style.display=cat==='personal'?'grid':'none';
+  if(elCcss) elCcss.style.display=cat==='personal'?'block':'none';
+  // Auto-setear condición IVA segun categoría
+  if(cat==='personal' && condIva && !condIva.value) condIva.value='no_aplica';
+  toggleCfIva();
+}
+function toggleCfIva(){
+  const cond=document.getElementById('cf-cond-iva').value;
+  const el=document.getElementById('cf-campo-tasa-iva');
+  if(el) el.style.display=(cond==='ri'||cond==='')?'block':'none';
+}
+function calcCCSS(){
+  const bruto=parseFloat(document.getElementById('cf-monto').value)||0;
+  const jub=parseFloat(document.getElementById('cf-ccss-jub').value)||0;
+  const os=parseFloat(document.getElementById('cf-ccss-os').value)||0;
+  const art=parseFloat(document.getElementById('cf-ccss-art').value)||0;
+  const totalPct=(jub+os+art)/100;
+  const totalCCSS=bruto*totalPct;
+  const costoTotal=bruto+totalCCSS;
+  const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const elT=document.getElementById('cf-ccss-total');
+  const elC=document.getElementById('cf-ccss-costo-total');
+  if(elT) elT.textContent=f(totalCCSS);
+  if(elC) elC.textContent=f(costoTotal);
 }
 async function guardarCostoFijo(){
   const monto=parseFloat(document.getElementById('cf-monto').value)||0;
   if(!monto){toast('Ingresá un monto','error');return;}
   const categoria=document.getElementById('cf-categoria').value;
+  const condIva=document.getElementById('cf-cond-iva').value;
+  if(!condIva){toast('Seleccioná condición de IVA','error');return;}
+  const tasaIva=parseFloat(document.getElementById('cf-tasa-iva').value)||0;
+  const ivaImporte=(condIva==='ri'&&tasaIva>0)?monto*tasaIva/100:0;
   const empleadoEl=document.getElementById('cf-empleado');
   const cuilEl=document.getElementById('cf-cuil');
+  // CCSS
+  const ccssJub=parseFloat(document.getElementById('cf-ccss-jub').value)||0;
+  const ccssOs=parseFloat(document.getElementById('cf-ccss-os').value)||0;
+  const ccssArt=parseFloat(document.getElementById('cf-ccss-art').value)||0;
+  const ccssTotalPct=ccssJub+ccssOs+ccssArt;
+  const ccssImporte=categoria==='personal'?monto*ccssTotalPct/100:0;
   await db.collection('costosfijos').add({
     categoria,
     descripcion:document.getElementById('cf-descripcion').value.trim(),
     empleado:empleadoEl?empleadoEl.value.trim():'',
     cuil:cuilEl?cuilEl.value.trim():'',
+    condIva, tasaIva, ivaImporte,
+    ccssJub, ccssOs, ccssArt, ccssTotalPct, ccssImporte,
+    costoTotal: monto + ivaImporte + ccssImporte,
     monto,
     periodo:document.getElementById('cf-periodo').value,
     estadoPago:document.getElementById('cf-estado').value,
@@ -2885,23 +2967,32 @@ async function cargarCostosFijos(){
     const snap=await db.collection('costosfijos').get();
     const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
     const cats={personal:'Personal',contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
-    if(snap.empty){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
+    const condIvaLabel={ri:'Resp. Inscripto',monotributo:'Monotributo',exento:'Exento',no_aplica:'No aplica'};
+    if(snap.empty){tbody.innerHTML='<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
     tbody.innerHTML=snap.docs.map(d=>{
       const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
       const descCell = v.categoria==='personal'
         ? `<div class="fw-600">${v.empleado||v.descripcion||'—'}</div><div class="text-sm text-muted">${v.cuil||''}</div>`
         : `${v.descripcion||'—'}`;
+      const ivaStr = v.condIva==='ri' && v.tasaIva>0
+        ? `<span class="badge badge-green" style="font-size:9px">RI</span> IVA ${v.tasaIva}%`
+        : `<span class="badge badge-gray" style="font-size:9px">${condIvaLabel[v.condIva]||v.condIva||'—'}</span>`;
+      const ccssStr = v.categoria==='personal' && v.ccssTotalPct>0
+        ? `<span style="font-family:var(--font-m);font-size:11px;color:var(--amber)">${f(v.ccssImporte||0)}<br><span style="color:var(--muted)">${v.ccssTotalPct?.toFixed(1)}%</span></span>`
+        : '<span style="color:var(--muted);font-size:12px">—</span>';
       return `<tr>
         <td><span class="badge" style="background:var(--sand);color:var(--g2)">${cats[v.categoria]||v.categoria}</span></td>
         <td>${descCell}</td>
+        <td style="font-size:12px">${ivaStr}${v.condIva==='ri'&&v.ivaImporte>0?`<br><span style="font-family:var(--font-m);font-size:11px;color:var(--muted)">+${f(v.ivaImporte)}</span>`:''}</td>
         <td class="td-right fw-600">${f(v.monto)}</td>
+        <td>${ccssStr}</td>
         <td>${v.periodo||'—'}</td>
         <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
         <td class="td-right" style="color:${s<0?'var(--red)':s>0?'var(--g2)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
         <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
       </tr>`;
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
+  }catch(e){tbody.innerHTML='<tr><td colspan="9" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
 }
 // ══ EDICIÓN DE MAESTROS ══
 const _editConfig = {
@@ -2958,7 +3049,9 @@ const _editConfig = {
     recargar: cargarCostosFijos,
     campos: {
       'cf-categoria':'categoria','cf-descripcion':'descripcion','cf-empleado':'empleado',
-      'cf-cuil':'cuil','cf-monto':'monto',
+      'cf-cuil':'cuil','cf-cond-iva':'condIva','cf-tasa-iva':'tasaIva',
+      'cf-ccss-jub':'ccssJub','cf-ccss-os':'ccssOs','cf-ccss-art':'ccssArt',
+      'cf-monto':'monto',
       'cf-periodo':'periodo','cf-estado':'estadoPago','cf-saldo':'saldo','cf-obs':'obs'
     }
   }
@@ -2987,8 +3080,12 @@ async function editarRegistro(coleccion, id){
   // Si es personal, recalcular liquidación
   if(coleccion === 'personal' && typeof calcSueldo === 'function') calcSueldo();
 
-  // Si es costosfijos, mostrar/ocultar campo empleado
-  if(coleccion === 'costosfijos' && typeof toggleCfPersonal === 'function') toggleCfPersonal();
+  // Si es costosfijos, mostrar/ocultar campos
+  if(coleccion === 'costosfijos'){
+    if(typeof toggleCfPersonal === 'function') toggleCfPersonal();
+    if(typeof toggleCfIva === 'function') toggleCfIva();
+    if(typeof calcCCSS === 'function') calcCCSS();
+  }
 
   // Cambiar título del modal
   const header = document.querySelector('#' + config.modal + ' .modal-title');
@@ -3038,8 +3135,21 @@ async function _actualizarDoc(coleccion, recargar){
     const val = el.value;
     // Intentar convertir a número si corresponde
     const num = parseFloat(val);
-    datos[campo] = !isNaN(num) && val !== '' && ['limiteCredito','iva','iibb','sueldoBruto','saldo','monto'].includes(campo) ? num : val;
+    datos[campo] = !isNaN(num) && val !== '' && ['limiteCredito','iva','iibb','sueldoBruto','saldo','monto','tasaIva','ccssJub','ccssOs','ccssArt'].includes(campo) ? num : val;
   });
+  // Si es costosfijos, recalcular ivaImporte, ccssTotalPct, ccssImporte y costoTotal
+  if(coleccion === 'costosfijos'){
+    const monto = datos.monto || 0;
+    const condIva = datos.condIva || '';
+    const tasaIva = datos.tasaIva || 0;
+    datos.ivaImporte = (condIva==='ri' && tasaIva>0) ? monto*tasaIva/100 : 0;
+    const ccssJub = datos.ccssJub || 0;
+    const ccssOs = datos.ccssOs || 0;
+    const ccssArt = datos.ccssArt || 0;
+    datos.ccssTotalPct = ccssJub + ccssOs + ccssArt;
+    datos.ccssImporte = datos.categoria==='personal' ? monto*datos.ccssTotalPct/100 : 0;
+    datos.costoTotal = monto + datos.ivaImporte + datos.ccssImporte;
+  }
   await db.collection(coleccion).doc(_editId).update(datos);
   _editId = null; _editCol = null;
   // Restaurar título
