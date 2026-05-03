@@ -4113,6 +4113,11 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
       <div class="iva-row"><span class="iva-label" style="font-weight:600">IVA débito fiscal</span><span id="rep-iva-debito">$ 0.00</span></div>
       <div class="iva-row"><span class="iva-label" style="font-weight:600">IVA crédito fiscal</span><span id="rep-iva-credito">$ 0.00</span></div>
       <div class="iva-row"><span class="iva-label" style="font-weight:600">Posición IVA</span><span id="rep-iva-posicion" class="fw-600">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label" style="font-weight:600">IIBB estimado</span><span id="rep-iibb-total" class="fw-600">$ 0.00</span></div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="section-title" style="margin-bottom:8px;font-size:12px">IIBB por provincia</div>
+      <div id="dash-iibb-detalle"><div class="iva-row"><span class="iva-label">Sin datos</span></div></div>
     </div>
   </div>
 </div>
@@ -6317,8 +6322,7 @@ async function cargarPersonal(){
         <td><button class="btn-icon" onclick="editarRegistro('personal','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
       </tr>`;
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="8" style="color:red;padding:16px">Error al cargar: '+e.message+'</td></tr>';}
-}
+  }catch(e){tbody.innerHTML='<tr><td colspan="8" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
 function abrirModalCostoFijo(){
   ['cf-descripcion','cf-obs'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('cf-monto').value='';
@@ -6380,8 +6384,7 @@ async function cargarCostosFijos(){
         <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
       </tr>`;
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error al cargar: '+e.message+'</td></tr>';}
-}
+  }catch(e){tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error: '+e.message+'</td></tr>';}
 // ══ EDICIÓN DE MAESTROS ══
 const _editConfig = {
   proveedores: {
