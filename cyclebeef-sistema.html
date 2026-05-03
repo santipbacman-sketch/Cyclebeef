@@ -4519,8 +4519,7 @@ function irA(pagina,el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+pagina).classList.add('active');
   el.classList.add('active');
-  if(tab==='personal') cargarPersonal();
-  if(tab==='costosfijos') cargarCostosFijos();
+  if(pagina==='costosfijos'){cargarCostosFijos();cargarResumenCostos();}
 }
 
 function cerrarSesion(){auth.signOut().then(()=>window.location.href='cyclebeef-public.html');}
@@ -4533,6 +4532,7 @@ function cambiarTab(tab,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+tab).style.display='block';
   el.classList.add('active');
+  if(tab==='personal') cargarPersonal();
   const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato',personal:'+ Nuevo empleado'};
   document.getElementById('btn-nuevo-maestro').textContent=labels[tab]||'+ Nuevo';
 }
