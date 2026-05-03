@@ -3671,6 +3671,7 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <div class="sidebar-section">Finanzas</div>
   <button class="nav-item" onclick="irA('cobros',this)"><span class="nav-icon">💰</span>Cobros y pagos</button>
   <button class="nav-item" onclick="irA('costosfijos',this)"><span class="nav-icon">📋</span>Costos fijos</button>
+  <button class="nav-item" onclick="irA('personal',this)"><span class="nav-icon">👤</span>Personal</button>
   <button class="nav-item" onclick="irA('reportes',this)"><span class="nav-icon">📊</span>Reportes</button>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
@@ -3739,7 +3740,6 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     <button class="tab" onclick="cambiarTab('frigorificos',this)">Frigoríficos</button>
     <button class="tab" onclick="cambiarTab('cortes',this)">Cortes</button>
     <button class="tab" onclick="cambiarTab('formatos',this)">Formatos</button>
-    <button class="tab" onclick="cambiarTab('personal',this)">Personal</button>
   </div>
   <div id="tab-proveedores" class="tab-content">
     <div class="card table-wrap"><table><thead><tr><th>Nombre comercial</th><th>Categoría</th><th>CUIT/CUIL</th><th>Cond. fiscal</th><th>IVA</th><th>Contacto</th><th>SENASA</th><th></th></tr></thead><tbody id="body-proveedores"><tr><td colspan="8"><div class="empty"><div class="empty-icon">🏢</div><div class="empty-text">Sin proveedores</div></div></td></tr></tbody></table></div>
@@ -3755,9 +3755,6 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
   <div id="tab-cortes" class="tab-content" style="display:none">
     <div class="card table-wrap"><table><thead><tr><th>Nombre del corte</th><th></th></tr></thead><tbody id="body-cortes"></tbody></table></div>
-  </div>
-  <div id="tab-personal" class="tab-content" style="display:none">
-    <div class="card table-wrap"><table><thead><tr><th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th></tr></thead><tbody id="body-personal"></tbody></table></div>
   </div>
   <div id="tab-formatos" class="tab-content" style="display:none">
     <div class="card table-wrap"><table><thead><tr><th>Nombre</th><th>Tipo</th><th class="td-right">Unidades</th><th class="td-right">Gr/unidad</th><th class="td-right">Kg/caja</th><th></th></tr></thead><tbody id="body-formatos"></tbody></table></div>
@@ -4630,6 +4627,7 @@ function irA(pagina,el){
   document.getElementById('page-'+pagina).classList.add('active');
   el.classList.add('active');
   if(pagina==='costosfijos'){cargarCostosFijos();cargarResumenCostos();}
+  if(pagina==='personal') cargarPersonal();
   if(pagina==='inicio') cargarStockInicio();
 }
 
@@ -4644,12 +4642,12 @@ function cambiarTab(tab,el){
   document.getElementById('tab-'+tab).style.display='block';
   el.classList.add('active');
   if(tab==='personal') cargarPersonal();
-  const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato',personal:'+ Nuevo empleado'};
+  const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato'};
   document.getElementById('btn-nuevo-maestro').textContent=labels[tab]||'+ Nuevo';
 }
 
 function abrirNuevoMaestro(){
-  const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato',personal:'modal-personal'};
+  const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato'};
   cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-personal');cerrarModal('modal-costofijo');
   document.getElementById(modales[tabActual]).classList.add('show');
 }
@@ -6161,6 +6159,19 @@ function cambiarTabCheques(tipo, el){
   </div>
 </div>
 
+<!-- ══ PERSONAL ══ -->
+<div class="page" id="page-personal">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Personal</div><div class="page-sub">Empleados y liquidación de sueldos</div></div>
+    <button class="btn-primary" onclick="abrirModalPersonal()">+ Nuevo empleado</button>
+  </div>
+  <div class="card table-wrap">
+    <table><thead><tr>
+      <th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto / neto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+    </tr></thead><tbody id="body-personal"></tbody></table>
+  </div>
+</div>
+
 <!-- MODAL PERSONAL -->
 <div class="modal" id="modal-personal">
   <div class="modal-box" style="max-width:600px">
@@ -6402,7 +6413,7 @@ async function guardarPersonal(){
   cerrarModal('modal-personal');toast('Empleado guardado ✓');cargarPersonal();
 }
 async function cargarPersonal(){
-  const snap=await db.collection('personal').orderBy('creado','desc').get();
+  const snap=await db.collection('personal').get();
   const tbody=document.getElementById('body-personal');
   if(!tbody)return;
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
@@ -6463,7 +6474,7 @@ async function cargarResumenCostos(){
     Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
 }
 async function cargarCostosFijos(){
-  const snap=await db.collection('costosfijos').orderBy('creado','desc').get();
+  const snap=await db.collection('costosfijos').get();
   const tbody=document.getElementById('body-costosfijos');
   if(!tbody)return;
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
