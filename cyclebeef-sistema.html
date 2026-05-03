@@ -2666,7 +2666,7 @@ function cambiarTabCheques(tipo, el){
 
 <!-- MODAL PERSONAL -->
 <div class="modal-overlay" id="modal-personal">
-  <div class="modal-box" style="max-width:560px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header"><div class="modal-title">Empleado</div><button class="modal-close" onclick="cerrarModal('modal-personal')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -2714,7 +2714,7 @@ function cambiarTabCheques(tipo, el){
 
 <!-- MODAL COSTO FIJO -->
 <div class="modal-overlay" id="modal-costofijo">
-  <div class="modal-box" style="max-width:500px">
+  <div class="modal" style="max-width:500px">
     <div class="modal-header"><div class="modal-title">Costo fijo</div><button class="modal-close" onclick="cerrarModal('modal-costofijo')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -2847,21 +2847,24 @@ async function guardarCostoFijo(){
   cerrarModal('modal-costofijo');toast('Costo fijo guardado ✓');cargarCostosFijos();cargarResumenCostos();
 }
 async function cargarResumenCostos(){
-  const snap=await db.collection('costosfijos').get();
-  const resumen={};let totalMensual=0;
-  const factores={mensual:1,quincenal:2,semanal:4.33,anual:1/12,unico:0};
-  snap.docs.forEach(d=>{
-    const v=d.data();
-    if(!resumen[v.categoria])resumen[v.categoria]=0;
-    resumen[v.categoria]+=v.monto||0;
-    totalMensual+=(v.monto||0)*(factores[v.periodo]||1);
-  });
-  const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
-  const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
   const el=document.getElementById('cf-cards');
   if(!el)return;
-  el.innerHTML=`<div class="stock-card"><div class="stock-card-label">Total mensual est.</div><div class="stock-card-val" style="font-size:20px">${f(totalMensual)}</div></div>`+
-    Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
+  try{
+    const snap=await db.collection('costosfijos').get();
+    const resumen={};let totalMensual=0;
+    const factores={mensual:1,quincenal:2,semanal:4.33,anual:1/12,unico:0};
+    snap.docs.forEach(d=>{
+      const v=d.data();
+      if(!resumen[v.categoria])resumen[v.categoria]=0;
+      resumen[v.categoria]+=v.monto||0;
+      totalMensual+=(v.monto||0)*(factores[v.periodo]||1);
+    });
+    const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+    const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
+    if(snap.empty){el.innerHTML='';return;}
+    el.innerHTML=`<div class="stock-card"><div class="stock-card-label">Total mensual est.</div><div class="stock-card-val" style="font-size:20px">${f(totalMensual)}</div></div>`+
+      Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
+  }catch(e){console.error('Error cargarResumenCostos:',e);el.innerHTML='';}
 }
 async function cargarCostosFijos(){
   const tbody=document.getElementById('body-costosfijos');
