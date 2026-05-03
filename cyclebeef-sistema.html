@@ -6298,7 +6298,7 @@ async function guardarPersonal(){
   cerrarModal('modal-personal');toast('Empleado guardado ✓');cargarPersonal();
 }
 async function cargarPersonal(){
-  const snap=await db.collection('personal').orderBy('creado','desc').get();
+  const snap=await db.collection('personal').get();
   const tbody=document.getElementById('body-personal');
   if(!tbody)return;
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
@@ -6359,7 +6359,7 @@ async function cargarResumenCostos(){
     Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
 }
 async function cargarCostosFijos(){
-  const snap=await db.collection('costosfijos').orderBy('creado','desc').get();
+  const snap=await db.collection('costosfijos').get();
   const tbody=document.getElementById('body-costosfijos');
   if(!tbody)return;
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
