@@ -2656,8 +2656,8 @@ function cambiarTabCheques(tipo, el){
 
 <!-- ══ PERSONAL ══ -->
 <!-- MODAL COSTO FIJO -->
-<div class="modal" id="modal-costofijo">
-  <div class="modal-box" style="max-width:520px">
+<div class="modal-overlay" id="modal-costofijo">
+  <div class="modal" style="max-width:520px">
     <div class="modal-header"><div class="modal-title">Costo fijo</div><button class="modal-close" onclick="cerrarModal('modal-costofijo')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -2723,6 +2723,7 @@ function cambiarTabCheques(tipo, el){
     </div>
   </div>
 </div>
+</div>
 
 <script>
 function togglePersonalCF(){
@@ -2770,7 +2771,9 @@ function abrirModalCostoFijo(){
   document.getElementById('cf-estado').value='pendiente';
   togglePersonalCF();
   calcSueldoCF();
-  document.getElementById('modal-costofijo').classList.add('show');
+  const overlay=document.getElementById('modal-costofijo');
+  overlay.classList.add('show');
+  overlay.onclick=function(e){if(e.target===overlay)cerrarModal('modal-costofijo');};
 }
 async function guardarCostoFijo(){
   const cat=document.getElementById('cf-categoria').value;
