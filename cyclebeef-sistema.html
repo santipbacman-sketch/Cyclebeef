@@ -183,6 +183,8 @@ async function guardarProduccion(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarProducciones(){
@@ -310,7 +312,9 @@ async function cargarStock(){
 
 function filtrarStock(){ cargarStock();
   cargarViajes();
-  cargarVentas(); }
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); }
 
 
 // ══ LOGÍSTICA ══
@@ -475,9 +479,13 @@ async function guardarViaje(){
   toast('Viaje guardado ✓');
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
   cargarStock();
   cargarViajes();
-  cargarVentas(); // actualizar stock
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -698,6 +706,8 @@ async function guardarVenta(){
   cerrarModal('modal-venta');
   toast('Venta guardada ✓');
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarVentas(){
@@ -727,6 +737,231 @@ async function cargarVentas(){
       <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
       <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
       <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ COBROS Y PAGOS ══
+let cobroActualId = null;
+let cobroActualColeccion = null;
+let pagoActualId = null;
+let pagoActualColeccion = null;
+
+function cambiarTabCobros(tab, el){
+  document.querySelectorAll('#page-cobros .tab-content, #page-cobros > div[id^="tab-cobros"]').forEach(t => t.style.display='none');
+  document.querySelectorAll('#page-cobros .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-cobros-'+tab).style.display='block';
+  el.classList.add('active');
+}
+
+// ── Alertas de vencimiento ──
+function diasParaVencer(fechaStr){
+  if(!fechaStr) return 999;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const fecha = new Date(fechaStr+'T12:00:00');
+  return Math.ceil((fecha - hoy)/(1000*60*60*24));
+}
+
+async function cargarCobros(){
+  // Ventas pendientes de cobro
+  const snap = await db.collection('ventas').where('estadoCobro','!=','cobrada').get();
+  const tbody = document.getElementById('body-cobros-pendientes');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin cobros pendientes</div></div></td></tr>';
+  } else {
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    tbody.innerHTML = snap.docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vencimiento);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencida' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${v.clienteNombre||'—'}</td>
+        <td class="td-mono">${v.facturaTipo||''} ${v.facturaNum||''}</td>
+        <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+        <td class="td-right" style="color:var(--amber)">$ 0.00</td>
+        <td class="td-right fw-600" style="color:var(--g2)">${fmt(v.totalConIva)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirCobro('${d.id}','ventas',${v.totalConIva})">Cobrar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagos pendientes (entradas + producciones + viajes)
+  const [entSnap, prodSnap, viajeSnap] = await Promise.all([
+    db.collection('entradas').where('estadoPago','==','pendiente').get(),
+    db.collection('producciones').where('estadoPagoFazon','==','pendiente').get(),
+    db.collection('viajes').where('estadoPago','==','pendiente').get()
+  ]);
+
+  const pagos = [];
+  entSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'entradas',proveedor:v.proveedorNombre,concepto:'Carne — Lote '+v.lote,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.totalConIva}); });
+  prodSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'producciones',proveedor:v.fazonProveedorNombre,concepto:'Fazón — Lote '+v.lote,factura:(v.fazonTipo||'')+' '+(v.fazonNum||''),vto:v.fazonVto,total:v.fazonTotal}); });
+  viajeSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'viajes',proveedor:v.proveedorNombre,concepto:'Logística — '+v.fecha,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.costoTotal}); });
+
+  const tbodyPagos = document.getElementById('body-pagos-pendientes');
+  if(pagos.length === 0){
+    tbodyPagos.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin pagos pendientes</div></div></td></tr>';
+  } else {
+    tbodyPagos.innerHTML = pagos.map(p => {
+      const dias = diasParaVencer(p.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencido' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${p.proveedor||'—'}</td>
+        <td>${p.concepto}</td>
+        <td class="td-mono">${p.factura}</td>
+        <td>${p.vto ? new Date(p.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td class="td-right fw-600">${fmt(p.total)}</td>
+        <td><span class="badge badge-amber">Pendiente</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirPago('${p.id}','${p.col}',${p.total})">Pagar</button></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── COBRO ──
+function abrirCobro(id, col, total){
+  cobroActualId = id; cobroActualColeccion = col;
+  document.getElementById('cobro-fecha').valueAsDate = new Date();
+  document.getElementById('cobro-monto').value = total.toFixed(2);
+  document.getElementById('cobro-retenciones').value = '';
+  document.getElementById('ret-iva').value = '';
+  document.getElementById('ret-ganancias').value = '';
+  document.getElementById('ret-iibb').value = '';
+  document.getElementById('cobro-total-factura').textContent = fmt(total);
+  document.getElementById('cobro-ret-display').textContent = '$ 0.00';
+  document.getElementById('cobro-neto').textContent = fmt(total);
+  document.getElementById('cobro-obs').value = '';
+  document.getElementById('modal-cobro').classList.add('show');
+}
+
+function toggleRetenciones(){
+  const el = document.getElementById('retenciones-detalle');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function sumarRetenciones(){
+  const ret = (parseFloat(document.getElementById('ret-iva').value)||0) +
+              (parseFloat(document.getElementById('ret-ganancias').value)||0) +
+              (parseFloat(document.getElementById('ret-iibb').value)||0);
+  document.getElementById('cobro-retenciones').value = ret.toFixed(2);
+  calcNeto();
+}
+
+function calcNeto(){
+  const total = parseFloat(document.getElementById('cobro-total-factura').textContent.replace('$ ','').replace(/\./g,'').replace(',','.')) || 0;
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  document.getElementById('cobro-ret-display').textContent = fmt(ret);
+  document.getElementById('cobro-neto').textContent = fmt(total - ret);
+}
+
+async function guardarCobro(){
+  const fecha = document.getElementById('cobro-fecha').value;
+  const monto = parseFloat(document.getElementById('cobro-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  const update = {
+    estadoCobro: 'cobrada',
+    fechaCobro: fecha,
+    medioCobro: document.getElementById('cobro-medio').value,
+    montoCobrado: monto,
+    retenciones: ret,
+    retIva: parseFloat(document.getElementById('ret-iva').value)||0,
+    retGanancias: parseFloat(document.getElementById('ret-ganancias').value)||0,
+    retIibb: parseFloat(document.getElementById('ret-iibb').value)||0,
+    netoRecibido: monto - ret,
+    obsCobro: document.getElementById('cobro-obs').value.trim()
+  };
+  await db.collection(cobroActualColeccion).doc(cobroActualId).update(update);
+  cerrarModal('modal-cobro'); toast('Cobro registrado ✓'); cargarCobros();
+}
+
+// ── PAGO ──
+function abrirPago(id, col, total){
+  pagoActualId = id; pagoActualColeccion = col;
+  document.getElementById('pago-fecha').valueAsDate = new Date();
+  document.getElementById('pago-monto').value = total.toFixed(2);
+  document.getElementById('pago-obs').value = '';
+  document.getElementById('modal-pago').classList.add('show');
+}
+
+async function guardarPago(){
+  const fecha = document.getElementById('pago-fecha').value;
+  const monto = parseFloat(document.getElementById('pago-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const estadoField = pagoActualColeccion === 'producciones' ? 'estadoPagoFazon' : 'estadoPago';
+  await db.collection(pagoActualColeccion).doc(pagoActualId).update({
+    [estadoField]: 'pagada',
+    fechaPago: fecha,
+    medioPago: document.getElementById('pago-medio').value,
+    montoPagado: monto,
+    obsPago: document.getElementById('pago-obs').value.trim()
+  });
+  cerrarModal('modal-pago'); toast('Pago registrado ✓'); cargarCobros();
+}
+
+// ── CHEQUES ──
+function abrirModalCheque(){
+  document.getElementById('cheque-emision').valueAsDate = new Date();
+  document.getElementById('cheque-num').value = '';
+  document.getElementById('cheque-banco').value = '';
+  document.getElementById('cheque-monto').value = '';
+  document.getElementById('cheque-vto').value = '';
+  document.getElementById('cheque-tercero').value = '';
+  document.getElementById('cheque-obs').value = '';
+  document.getElementById('modal-cheque').classList.add('show');
+}
+
+async function guardarCheque(){
+  const num = document.getElementById('cheque-num').value.trim();
+  const banco = document.getElementById('cheque-banco').value.trim();
+  const monto = parseFloat(document.getElementById('cheque-monto').value) || 0;
+  const vto = document.getElementById('cheque-vto').value;
+  if(!num || !banco || !monto || !vto){toast('Completá los campos obligatorios','error');return;}
+  await db.collection('cheques').add({
+    tipo: document.getElementById('cheque-tipo').value,
+    numero: num, banco, monto, vto,
+    emision: document.getElementById('cheque-emision').value,
+    tercero: document.getElementById('cheque-tercero').value.trim(),
+    obs: document.getElementById('cheque-obs').value.trim(),
+    estado: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+}
+
+async function cargarCheques(){
+  const snap = await db.collection('cheques').orderBy('vto','asc').get();
+  const tbody = document.getElementById('body-cheques');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const dias = diasParaVencer(v.vto);
+    const vencido = dias < 0;
+    const urgente = dias >= 0 && dias <= 5;
+    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+    return `<tr>
+      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
+      <td class="td-mono">${v.numero}</td>
+      <td>${v.banco||'—'}</td>
+      <td>${v.tercero||'—'}</td>
+      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmt(v.monto)}</td>
+      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -909,6 +1144,8 @@ async function guardarProduccion(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarProducciones(){
@@ -1036,7 +1273,9 @@ async function cargarStock(){
 
 function filtrarStock(){ cargarStock();
   cargarViajes();
-  cargarVentas(); }
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); }
 
 
 // ══ LOGÍSTICA ══
@@ -1201,9 +1440,13 @@ async function guardarViaje(){
   toast('Viaje guardado ✓');
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
   cargarStock();
   cargarViajes();
-  cargarVentas(); // actualizar stock
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -1424,6 +1667,8 @@ async function guardarVenta(){
   cerrarModal('modal-venta');
   toast('Venta guardada ✓');
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarVentas(){
@@ -1453,6 +1698,231 @@ async function cargarVentas(){
       <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
       <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
       <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ COBROS Y PAGOS ══
+let cobroActualId = null;
+let cobroActualColeccion = null;
+let pagoActualId = null;
+let pagoActualColeccion = null;
+
+function cambiarTabCobros(tab, el){
+  document.querySelectorAll('#page-cobros .tab-content, #page-cobros > div[id^="tab-cobros"]').forEach(t => t.style.display='none');
+  document.querySelectorAll('#page-cobros .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-cobros-'+tab).style.display='block';
+  el.classList.add('active');
+}
+
+// ── Alertas de vencimiento ──
+function diasParaVencer(fechaStr){
+  if(!fechaStr) return 999;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const fecha = new Date(fechaStr+'T12:00:00');
+  return Math.ceil((fecha - hoy)/(1000*60*60*24));
+}
+
+async function cargarCobros(){
+  // Ventas pendientes de cobro
+  const snap = await db.collection('ventas').where('estadoCobro','!=','cobrada').get();
+  const tbody = document.getElementById('body-cobros-pendientes');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin cobros pendientes</div></div></td></tr>';
+  } else {
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    tbody.innerHTML = snap.docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vencimiento);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencida' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${v.clienteNombre||'—'}</td>
+        <td class="td-mono">${v.facturaTipo||''} ${v.facturaNum||''}</td>
+        <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+        <td class="td-right" style="color:var(--amber)">$ 0.00</td>
+        <td class="td-right fw-600" style="color:var(--g2)">${fmt(v.totalConIva)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirCobro('${d.id}','ventas',${v.totalConIva})">Cobrar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagos pendientes (entradas + producciones + viajes)
+  const [entSnap, prodSnap, viajeSnap] = await Promise.all([
+    db.collection('entradas').where('estadoPago','==','pendiente').get(),
+    db.collection('producciones').where('estadoPagoFazon','==','pendiente').get(),
+    db.collection('viajes').where('estadoPago','==','pendiente').get()
+  ]);
+
+  const pagos = [];
+  entSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'entradas',proveedor:v.proveedorNombre,concepto:'Carne — Lote '+v.lote,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.totalConIva}); });
+  prodSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'producciones',proveedor:v.fazonProveedorNombre,concepto:'Fazón — Lote '+v.lote,factura:(v.fazonTipo||'')+' '+(v.fazonNum||''),vto:v.fazonVto,total:v.fazonTotal}); });
+  viajeSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'viajes',proveedor:v.proveedorNombre,concepto:'Logística — '+v.fecha,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.costoTotal}); });
+
+  const tbodyPagos = document.getElementById('body-pagos-pendientes');
+  if(pagos.length === 0){
+    tbodyPagos.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin pagos pendientes</div></div></td></tr>';
+  } else {
+    tbodyPagos.innerHTML = pagos.map(p => {
+      const dias = diasParaVencer(p.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencido' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${p.proveedor||'—'}</td>
+        <td>${p.concepto}</td>
+        <td class="td-mono">${p.factura}</td>
+        <td>${p.vto ? new Date(p.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td class="td-right fw-600">${fmt(p.total)}</td>
+        <td><span class="badge badge-amber">Pendiente</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirPago('${p.id}','${p.col}',${p.total})">Pagar</button></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── COBRO ──
+function abrirCobro(id, col, total){
+  cobroActualId = id; cobroActualColeccion = col;
+  document.getElementById('cobro-fecha').valueAsDate = new Date();
+  document.getElementById('cobro-monto').value = total.toFixed(2);
+  document.getElementById('cobro-retenciones').value = '';
+  document.getElementById('ret-iva').value = '';
+  document.getElementById('ret-ganancias').value = '';
+  document.getElementById('ret-iibb').value = '';
+  document.getElementById('cobro-total-factura').textContent = fmt(total);
+  document.getElementById('cobro-ret-display').textContent = '$ 0.00';
+  document.getElementById('cobro-neto').textContent = fmt(total);
+  document.getElementById('cobro-obs').value = '';
+  document.getElementById('modal-cobro').classList.add('show');
+}
+
+function toggleRetenciones(){
+  const el = document.getElementById('retenciones-detalle');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function sumarRetenciones(){
+  const ret = (parseFloat(document.getElementById('ret-iva').value)||0) +
+              (parseFloat(document.getElementById('ret-ganancias').value)||0) +
+              (parseFloat(document.getElementById('ret-iibb').value)||0);
+  document.getElementById('cobro-retenciones').value = ret.toFixed(2);
+  calcNeto();
+}
+
+function calcNeto(){
+  const total = parseFloat(document.getElementById('cobro-total-factura').textContent.replace('$ ','').replace(/\./g,'').replace(',','.')) || 0;
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  document.getElementById('cobro-ret-display').textContent = fmt(ret);
+  document.getElementById('cobro-neto').textContent = fmt(total - ret);
+}
+
+async function guardarCobro(){
+  const fecha = document.getElementById('cobro-fecha').value;
+  const monto = parseFloat(document.getElementById('cobro-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  const update = {
+    estadoCobro: 'cobrada',
+    fechaCobro: fecha,
+    medioCobro: document.getElementById('cobro-medio').value,
+    montoCobrado: monto,
+    retenciones: ret,
+    retIva: parseFloat(document.getElementById('ret-iva').value)||0,
+    retGanancias: parseFloat(document.getElementById('ret-ganancias').value)||0,
+    retIibb: parseFloat(document.getElementById('ret-iibb').value)||0,
+    netoRecibido: monto - ret,
+    obsCobro: document.getElementById('cobro-obs').value.trim()
+  };
+  await db.collection(cobroActualColeccion).doc(cobroActualId).update(update);
+  cerrarModal('modal-cobro'); toast('Cobro registrado ✓'); cargarCobros();
+}
+
+// ── PAGO ──
+function abrirPago(id, col, total){
+  pagoActualId = id; pagoActualColeccion = col;
+  document.getElementById('pago-fecha').valueAsDate = new Date();
+  document.getElementById('pago-monto').value = total.toFixed(2);
+  document.getElementById('pago-obs').value = '';
+  document.getElementById('modal-pago').classList.add('show');
+}
+
+async function guardarPago(){
+  const fecha = document.getElementById('pago-fecha').value;
+  const monto = parseFloat(document.getElementById('pago-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const estadoField = pagoActualColeccion === 'producciones' ? 'estadoPagoFazon' : 'estadoPago';
+  await db.collection(pagoActualColeccion).doc(pagoActualId).update({
+    [estadoField]: 'pagada',
+    fechaPago: fecha,
+    medioPago: document.getElementById('pago-medio').value,
+    montoPagado: monto,
+    obsPago: document.getElementById('pago-obs').value.trim()
+  });
+  cerrarModal('modal-pago'); toast('Pago registrado ✓'); cargarCobros();
+}
+
+// ── CHEQUES ──
+function abrirModalCheque(){
+  document.getElementById('cheque-emision').valueAsDate = new Date();
+  document.getElementById('cheque-num').value = '';
+  document.getElementById('cheque-banco').value = '';
+  document.getElementById('cheque-monto').value = '';
+  document.getElementById('cheque-vto').value = '';
+  document.getElementById('cheque-tercero').value = '';
+  document.getElementById('cheque-obs').value = '';
+  document.getElementById('modal-cheque').classList.add('show');
+}
+
+async function guardarCheque(){
+  const num = document.getElementById('cheque-num').value.trim();
+  const banco = document.getElementById('cheque-banco').value.trim();
+  const monto = parseFloat(document.getElementById('cheque-monto').value) || 0;
+  const vto = document.getElementById('cheque-vto').value;
+  if(!num || !banco || !monto || !vto){toast('Completá los campos obligatorios','error');return;}
+  await db.collection('cheques').add({
+    tipo: document.getElementById('cheque-tipo').value,
+    numero: num, banco, monto, vto,
+    emision: document.getElementById('cheque-emision').value,
+    tercero: document.getElementById('cheque-tercero').value.trim(),
+    obs: document.getElementById('cheque-obs').value.trim(),
+    estado: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+}
+
+async function cargarCheques(){
+  const snap = await db.collection('cheques').orderBy('vto','asc').get();
+  const tbody = document.getElementById('body-cheques');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const dias = diasParaVencer(v.vto);
+    const vencido = dias < 0;
+    const urgente = dias >= 0 && dias <= 5;
+    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+    return `<tr>
+      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
+      <td class="td-mono">${v.numero}</td>
+      <td>${v.banco||'—'}</td>
+      <td>${v.tercero||'—'}</td>
+      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmt(v.monto)}</td>
+      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -1635,6 +2105,8 @@ async function guardarProduccion(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarProducciones(){
@@ -1762,7 +2234,9 @@ async function cargarStock(){
 
 function filtrarStock(){ cargarStock();
   cargarViajes();
-  cargarVentas(); }
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); }
 
 
 // ══ LOGÍSTICA ══
@@ -1927,9 +2401,13 @@ async function guardarViaje(){
   toast('Viaje guardado ✓');
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
   cargarStock();
   cargarViajes();
-  cargarVentas(); // actualizar stock
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -2150,6 +2628,8 @@ async function guardarVenta(){
   cerrarModal('modal-venta');
   toast('Venta guardada ✓');
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarVentas(){
@@ -2179,6 +2659,231 @@ async function cargarVentas(){
       <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
       <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
       <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ COBROS Y PAGOS ══
+let cobroActualId = null;
+let cobroActualColeccion = null;
+let pagoActualId = null;
+let pagoActualColeccion = null;
+
+function cambiarTabCobros(tab, el){
+  document.querySelectorAll('#page-cobros .tab-content, #page-cobros > div[id^="tab-cobros"]').forEach(t => t.style.display='none');
+  document.querySelectorAll('#page-cobros .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-cobros-'+tab).style.display='block';
+  el.classList.add('active');
+}
+
+// ── Alertas de vencimiento ──
+function diasParaVencer(fechaStr){
+  if(!fechaStr) return 999;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const fecha = new Date(fechaStr+'T12:00:00');
+  return Math.ceil((fecha - hoy)/(1000*60*60*24));
+}
+
+async function cargarCobros(){
+  // Ventas pendientes de cobro
+  const snap = await db.collection('ventas').where('estadoCobro','!=','cobrada').get();
+  const tbody = document.getElementById('body-cobros-pendientes');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin cobros pendientes</div></div></td></tr>';
+  } else {
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    tbody.innerHTML = snap.docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vencimiento);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencida' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${v.clienteNombre||'—'}</td>
+        <td class="td-mono">${v.facturaTipo||''} ${v.facturaNum||''}</td>
+        <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+        <td class="td-right" style="color:var(--amber)">$ 0.00</td>
+        <td class="td-right fw-600" style="color:var(--g2)">${fmt(v.totalConIva)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirCobro('${d.id}','ventas',${v.totalConIva})">Cobrar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagos pendientes (entradas + producciones + viajes)
+  const [entSnap, prodSnap, viajeSnap] = await Promise.all([
+    db.collection('entradas').where('estadoPago','==','pendiente').get(),
+    db.collection('producciones').where('estadoPagoFazon','==','pendiente').get(),
+    db.collection('viajes').where('estadoPago','==','pendiente').get()
+  ]);
+
+  const pagos = [];
+  entSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'entradas',proveedor:v.proveedorNombre,concepto:'Carne — Lote '+v.lote,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.totalConIva}); });
+  prodSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'producciones',proveedor:v.fazonProveedorNombre,concepto:'Fazón — Lote '+v.lote,factura:(v.fazonTipo||'')+' '+(v.fazonNum||''),vto:v.fazonVto,total:v.fazonTotal}); });
+  viajeSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'viajes',proveedor:v.proveedorNombre,concepto:'Logística — '+v.fecha,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.costoTotal}); });
+
+  const tbodyPagos = document.getElementById('body-pagos-pendientes');
+  if(pagos.length === 0){
+    tbodyPagos.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin pagos pendientes</div></div></td></tr>';
+  } else {
+    tbodyPagos.innerHTML = pagos.map(p => {
+      const dias = diasParaVencer(p.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencido' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${p.proveedor||'—'}</td>
+        <td>${p.concepto}</td>
+        <td class="td-mono">${p.factura}</td>
+        <td>${p.vto ? new Date(p.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td class="td-right fw-600">${fmt(p.total)}</td>
+        <td><span class="badge badge-amber">Pendiente</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirPago('${p.id}','${p.col}',${p.total})">Pagar</button></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── COBRO ──
+function abrirCobro(id, col, total){
+  cobroActualId = id; cobroActualColeccion = col;
+  document.getElementById('cobro-fecha').valueAsDate = new Date();
+  document.getElementById('cobro-monto').value = total.toFixed(2);
+  document.getElementById('cobro-retenciones').value = '';
+  document.getElementById('ret-iva').value = '';
+  document.getElementById('ret-ganancias').value = '';
+  document.getElementById('ret-iibb').value = '';
+  document.getElementById('cobro-total-factura').textContent = fmt(total);
+  document.getElementById('cobro-ret-display').textContent = '$ 0.00';
+  document.getElementById('cobro-neto').textContent = fmt(total);
+  document.getElementById('cobro-obs').value = '';
+  document.getElementById('modal-cobro').classList.add('show');
+}
+
+function toggleRetenciones(){
+  const el = document.getElementById('retenciones-detalle');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function sumarRetenciones(){
+  const ret = (parseFloat(document.getElementById('ret-iva').value)||0) +
+              (parseFloat(document.getElementById('ret-ganancias').value)||0) +
+              (parseFloat(document.getElementById('ret-iibb').value)||0);
+  document.getElementById('cobro-retenciones').value = ret.toFixed(2);
+  calcNeto();
+}
+
+function calcNeto(){
+  const total = parseFloat(document.getElementById('cobro-total-factura').textContent.replace('$ ','').replace(/\./g,'').replace(',','.')) || 0;
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  document.getElementById('cobro-ret-display').textContent = fmt(ret);
+  document.getElementById('cobro-neto').textContent = fmt(total - ret);
+}
+
+async function guardarCobro(){
+  const fecha = document.getElementById('cobro-fecha').value;
+  const monto = parseFloat(document.getElementById('cobro-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  const update = {
+    estadoCobro: 'cobrada',
+    fechaCobro: fecha,
+    medioCobro: document.getElementById('cobro-medio').value,
+    montoCobrado: monto,
+    retenciones: ret,
+    retIva: parseFloat(document.getElementById('ret-iva').value)||0,
+    retGanancias: parseFloat(document.getElementById('ret-ganancias').value)||0,
+    retIibb: parseFloat(document.getElementById('ret-iibb').value)||0,
+    netoRecibido: monto - ret,
+    obsCobro: document.getElementById('cobro-obs').value.trim()
+  };
+  await db.collection(cobroActualColeccion).doc(cobroActualId).update(update);
+  cerrarModal('modal-cobro'); toast('Cobro registrado ✓'); cargarCobros();
+}
+
+// ── PAGO ──
+function abrirPago(id, col, total){
+  pagoActualId = id; pagoActualColeccion = col;
+  document.getElementById('pago-fecha').valueAsDate = new Date();
+  document.getElementById('pago-monto').value = total.toFixed(2);
+  document.getElementById('pago-obs').value = '';
+  document.getElementById('modal-pago').classList.add('show');
+}
+
+async function guardarPago(){
+  const fecha = document.getElementById('pago-fecha').value;
+  const monto = parseFloat(document.getElementById('pago-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const estadoField = pagoActualColeccion === 'producciones' ? 'estadoPagoFazon' : 'estadoPago';
+  await db.collection(pagoActualColeccion).doc(pagoActualId).update({
+    [estadoField]: 'pagada',
+    fechaPago: fecha,
+    medioPago: document.getElementById('pago-medio').value,
+    montoPagado: monto,
+    obsPago: document.getElementById('pago-obs').value.trim()
+  });
+  cerrarModal('modal-pago'); toast('Pago registrado ✓'); cargarCobros();
+}
+
+// ── CHEQUES ──
+function abrirModalCheque(){
+  document.getElementById('cheque-emision').valueAsDate = new Date();
+  document.getElementById('cheque-num').value = '';
+  document.getElementById('cheque-banco').value = '';
+  document.getElementById('cheque-monto').value = '';
+  document.getElementById('cheque-vto').value = '';
+  document.getElementById('cheque-tercero').value = '';
+  document.getElementById('cheque-obs').value = '';
+  document.getElementById('modal-cheque').classList.add('show');
+}
+
+async function guardarCheque(){
+  const num = document.getElementById('cheque-num').value.trim();
+  const banco = document.getElementById('cheque-banco').value.trim();
+  const monto = parseFloat(document.getElementById('cheque-monto').value) || 0;
+  const vto = document.getElementById('cheque-vto').value;
+  if(!num || !banco || !monto || !vto){toast('Completá los campos obligatorios','error');return;}
+  await db.collection('cheques').add({
+    tipo: document.getElementById('cheque-tipo').value,
+    numero: num, banco, monto, vto,
+    emision: document.getElementById('cheque-emision').value,
+    tercero: document.getElementById('cheque-tercero').value.trim(),
+    obs: document.getElementById('cheque-obs').value.trim(),
+    estado: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+}
+
+async function cargarCheques(){
+  const snap = await db.collection('cheques').orderBy('vto','asc').get();
+  const tbody = document.getElementById('body-cheques');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const dias = diasParaVencer(v.vto);
+    const vencido = dias < 0;
+    const urgente = dias >= 0 && dias <= 5;
+    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+    return `<tr>
+      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
+      <td class="td-mono">${v.numero}</td>
+      <td>${v.banco||'—'}</td>
+      <td>${v.tercero||'—'}</td>
+      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmt(v.monto)}</td>
+      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -2524,7 +3229,85 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     </table>
   </div>
 </div>
-<div class="page" id="page-cobros"><div class="page-header"><div class="page-title">Cobros y pagos</div></div><div class="card"><div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Próximamente</div></div></div></div>
+<div class="page" id="page-cobros">
+  <div class="page-header">
+    <div><div class="page-title">Cobros y pagos</div><div class="page-sub">Gestión financiera, cheques y retenciones</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="cambiarTabCobros('pendientes-cobro',this)">Pendientes de cobro</button>
+    <button class="tab" onclick="cambiarTabCobros('pendientes-pago',this)">Pendientes de pago</button>
+    <button class="tab" onclick="cambiarTabCobros('cheques',this)">Cheques</button>
+  </div>
+
+  <!-- PENDIENTES DE COBRO -->
+  <div id="tab-cobros-pendientes-cobro">
+    <div class="card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Cliente</th>
+          <th>Factura</th>
+          <th>Fecha</th>
+          <th>Vencimiento</th>
+          <th class="td-right">Total</th>
+          <th class="td-right">Retenido</th>
+          <th class="td-right">A cobrar</th>
+          <th>Estado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="body-cobros-pendientes">
+          <tr><td colspan="9"><div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Sin cobros pendientes</div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PENDIENTES DE PAGO -->
+  <div id="tab-cobros-pendientes-pago" style="display:none">
+    <div class="card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Proveedor</th>
+          <th>Concepto</th>
+          <th>Factura</th>
+          <th>Vencimiento</th>
+          <th class="td-right">Total</th>
+          <th>Estado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="body-pagos-pendientes">
+          <tr><td colspan="7"><div class="empty"><div class="empty-icon">💸</div><div class="empty-text">Sin pagos pendientes</div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CHEQUES -->
+  <div id="tab-cobros-cheques" style="display:none">
+    <div class="flex-between mb-16">
+      <div></div>
+      <button class="btn btn-primary" onclick="abrirModalCheque()">+ Nuevo cheque</button>
+    </div>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr>
+          <th>Tipo</th>
+          <th>N° Cheque</th>
+          <th>Banco</th>
+          <th>Emisor/Receptor</th>
+          <th>Fecha emisión</th>
+          <th>Fecha acreditación/vto</th>
+          <th class="td-right">Monto</th>
+          <th>Estado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="body-cheques">
+          <tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 <div class="page" id="page-reportes"><div class="page-header"><div class="page-title">Reportes</div></div><div class="card"><div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Próximamente</div></div></div></div>
 
 </div><!-- /main -->
@@ -2908,6 +3691,97 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
 </div>
 
+
+<!-- ══ MODAL REGISTRAR COBRO ══ -->
+<div class="modal-overlay" id="modal-cobro">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-header">
+      <div class="modal-title" id="cobro-modal-title">Registrar cobro</div>
+      <button class="modal-close" onclick="cerrarModal('modal-cobro')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Fecha de cobro <span class="required">*</span></label><input type="date" class="form-input" id="cobro-fecha"></div>
+        <div><label class="form-label">Medio de pago <span class="required">*</span></label><select class="form-select" id="cobro-medio"><option value="transferencia">Transferencia</option><option value="cheque">Cheque</option><option value="efectivo">Efectivo</option></select></div>
+      </div>
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Monto cobrado <span class="required">*</span></label><input type="number" class="form-input" id="cobro-monto" step="0.01" placeholder="0.00"></div>
+        <div><label class="form-label">Retenciones</label><input type="number" class="form-input" id="cobro-retenciones" step="0.01" placeholder="0.00" oninput="calcNeto()"></div>
+      </div>
+      <div id="retenciones-detalle" style="display:none">
+        <div class="form-grid form-grid-3 mb-16">
+          <div><label class="form-label">Ret. IVA</label><input type="number" class="form-input" id="ret-iva" step="0.01" placeholder="0.00" oninput="sumarRetenciones()"></div>
+          <div><label class="form-label">Ret. Ganancias</label><input type="number" class="form-input" id="ret-ganancias" step="0.01" placeholder="0.00" oninput="sumarRetenciones()"></div>
+          <div><label class="form-label">Ret. IIBB</label><input type="number" class="form-input" id="ret-iibb" step="0.01" placeholder="0.00" oninput="sumarRetenciones()"></div>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-sm mb-16" onclick="toggleRetenciones()">+ Desglosar retenciones</button>
+      <div class="iva-box">
+        <div class="iva-row"><span class="iva-label">Total factura</span><span id="cobro-total-factura" class="fw-600">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">Retenciones</span><span id="cobro-ret-display" style="color:var(--amber)">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">Neto a cobrar</span><span id="cobro-neto" class="fw-600" style="color:var(--g2)">$ 0.00</span></div>
+      </div>
+      <div style="margin-top:14px"><label class="form-label">Observaciones</label><textarea class="form-textarea" id="cobro-obs" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modal-cobro')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCobro()">Confirmar cobro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL REGISTRAR PAGO ══ -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title" id="pago-modal-title">Registrar pago</div>
+      <button class="modal-close" onclick="cerrarModal('modal-pago')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Fecha de pago <span class="required">*</span></label><input type="date" class="form-input" id="pago-fecha"></div>
+        <div><label class="form-label">Medio de pago <span class="required">*</span></label><select class="form-select" id="pago-medio"><option value="transferencia">Transferencia</option><option value="cheque">Cheque diferido</option><option value="efectivo">Efectivo</option></select></div>
+      </div>
+      <div class="mb-16"><label class="form-label">Monto pagado <span class="required">*</span></label><input type="number" class="form-input" id="pago-monto" step="0.01" placeholder="0.00"></div>
+      <div><label class="form-label">Observaciones</label><textarea class="form-textarea" id="pago-obs" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modal-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPago()">Confirmar pago</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL CHEQUE ══ -->
+<div class="modal-overlay" id="modal-cheque">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Nuevo cheque</div>
+      <button class="modal-close" onclick="cerrarModal('modal-cheque')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Tipo <span class="required">*</span></label><select class="form-select" id="cheque-tipo"><option value="cobrar">A cobrar (nos dieron)</option><option value="pagar">A pagar (dimos nosotros)</option></select></div>
+        <div><label class="form-label">N° Cheque <span class="required">*</span></label><input type="text" class="form-input" id="cheque-num" placeholder="12345678"></div>
+      </div>
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Banco <span class="required">*</span></label><input type="text" class="form-input" id="cheque-banco" placeholder="Banco Nación"></div>
+        <div><label class="form-label">Monto <span class="required">*</span></label><input type="number" class="form-input" id="cheque-monto" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Fecha emisión</label><input type="date" class="form-input" id="cheque-emision"></div>
+        <div><label class="form-label">Fecha acreditación/vto <span class="required">*</span></label><input type="date" class="form-input" id="cheque-vto"></div>
+      </div>
+      <div class="mb-16"><label class="form-label">Cliente / Proveedor</label><input type="text" class="form-input" id="cheque-tercero" placeholder="Nombre de quien lo emitió o a quien se lo dimos"></div>
+      <div><label class="form-label">Observaciones</label><textarea class="form-textarea" id="cheque-obs" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modal-cheque')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCheque()">Guardar cheque</button>
+    </div>
+  </div>
+</div>
+
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",
@@ -2933,6 +3807,8 @@ async function init(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 // ── NAV ──
@@ -3261,6 +4137,8 @@ async function guardarEntrada(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarEntradas(){
@@ -3462,6 +4340,8 @@ async function guardarProduccion(){
   cargarStock();
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarProducciones(){
@@ -3589,7 +4469,9 @@ async function cargarStock(){
 
 function filtrarStock(){ cargarStock();
   cargarViajes();
-  cargarVentas(); }
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); }
 
 
 // ══ LOGÍSTICA ══
@@ -3754,9 +4636,13 @@ async function guardarViaje(){
   toast('Viaje guardado ✓');
   cargarViajes();
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
   cargarStock();
   cargarViajes();
-  cargarVentas(); // actualizar stock
+  cargarVentas();
+  cargarCobros();
+  cargarCheques(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -3977,6 +4863,8 @@ async function guardarVenta(){
   cerrarModal('modal-venta');
   toast('Venta guardada ✓');
   cargarVentas();
+  cargarCobros();
+  cargarCheques();
 }
 
 async function cargarVentas(){
@@ -4006,6 +4894,231 @@ async function cargarVentas(){
       <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
       <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
       <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ COBROS Y PAGOS ══
+let cobroActualId = null;
+let cobroActualColeccion = null;
+let pagoActualId = null;
+let pagoActualColeccion = null;
+
+function cambiarTabCobros(tab, el){
+  document.querySelectorAll('#page-cobros .tab-content, #page-cobros > div[id^="tab-cobros"]').forEach(t => t.style.display='none');
+  document.querySelectorAll('#page-cobros .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-cobros-'+tab).style.display='block';
+  el.classList.add('active');
+}
+
+// ── Alertas de vencimiento ──
+function diasParaVencer(fechaStr){
+  if(!fechaStr) return 999;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const fecha = new Date(fechaStr+'T12:00:00');
+  return Math.ceil((fecha - hoy)/(1000*60*60*24));
+}
+
+async function cargarCobros(){
+  // Ventas pendientes de cobro
+  const snap = await db.collection('ventas').where('estadoCobro','!=','cobrada').get();
+  const tbody = document.getElementById('body-cobros-pendientes');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin cobros pendientes</div></div></td></tr>';
+  } else {
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    tbody.innerHTML = snap.docs.map(d => {
+      const v = d.data();
+      const dias = diasParaVencer(v.vencimiento);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencida' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${v.clienteNombre||'—'}</td>
+        <td class="td-mono">${v.facturaTipo||''} ${v.facturaNum||''}</td>
+        <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+        <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+        <td class="td-right" style="color:var(--amber)">$ 0.00</td>
+        <td class="td-right fw-600" style="color:var(--g2)">${fmt(v.totalConIva)}</td>
+        <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirCobro('${d.id}','ventas',${v.totalConIva})">Cobrar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagos pendientes (entradas + producciones + viajes)
+  const [entSnap, prodSnap, viajeSnap] = await Promise.all([
+    db.collection('entradas').where('estadoPago','==','pendiente').get(),
+    db.collection('producciones').where('estadoPagoFazon','==','pendiente').get(),
+    db.collection('viajes').where('estadoPago','==','pendiente').get()
+  ]);
+
+  const pagos = [];
+  entSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'entradas',proveedor:v.proveedorNombre,concepto:'Carne — Lote '+v.lote,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.totalConIva}); });
+  prodSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'producciones',proveedor:v.fazonProveedorNombre,concepto:'Fazón — Lote '+v.lote,factura:(v.fazonTipo||'')+' '+(v.fazonNum||''),vto:v.fazonVto,total:v.fazonTotal}); });
+  viajeSnap.docs.forEach(d => { const v=d.data(); pagos.push({id:d.id,col:'viajes',proveedor:v.proveedorNombre,concepto:'Logística — '+v.fecha,factura:(v.facturaTipo||'')+' '+(v.facturaNum||''),vto:v.facturaVto,total:v.costoTotal}); });
+
+  const tbodyPagos = document.getElementById('body-pagos-pendientes');
+  if(pagos.length === 0){
+    tbodyPagos.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Sin pagos pendientes</div></div></td></tr>';
+  } else {
+    tbodyPagos.innerHTML = pagos.map(p => {
+      const dias = diasParaVencer(p.vto);
+      const vencido = dias < 0;
+      const urgente = dias >= 0 && dias <= 5;
+      const alertColor = vencido ? 'red' : urgente ? 'amber' : 'green';
+      const alertLabel = vencido ? 'Vencido' : urgente ? dias+' días' : 'OK';
+      return `<tr>
+        <td class="fw-600">${p.proveedor||'—'}</td>
+        <td>${p.concepto}</td>
+        <td class="td-mono">${p.factura}</td>
+        <td>${p.vto ? new Date(p.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}<br><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+        <td class="td-right fw-600">${fmt(p.total)}</td>
+        <td><span class="badge badge-amber">Pendiente</span></td>
+        <td><button class="btn btn-primary btn-sm" onclick="abrirPago('${p.id}','${p.col}',${p.total})">Pagar</button></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── COBRO ──
+function abrirCobro(id, col, total){
+  cobroActualId = id; cobroActualColeccion = col;
+  document.getElementById('cobro-fecha').valueAsDate = new Date();
+  document.getElementById('cobro-monto').value = total.toFixed(2);
+  document.getElementById('cobro-retenciones').value = '';
+  document.getElementById('ret-iva').value = '';
+  document.getElementById('ret-ganancias').value = '';
+  document.getElementById('ret-iibb').value = '';
+  document.getElementById('cobro-total-factura').textContent = fmt(total);
+  document.getElementById('cobro-ret-display').textContent = '$ 0.00';
+  document.getElementById('cobro-neto').textContent = fmt(total);
+  document.getElementById('cobro-obs').value = '';
+  document.getElementById('modal-cobro').classList.add('show');
+}
+
+function toggleRetenciones(){
+  const el = document.getElementById('retenciones-detalle');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function sumarRetenciones(){
+  const ret = (parseFloat(document.getElementById('ret-iva').value)||0) +
+              (parseFloat(document.getElementById('ret-ganancias').value)||0) +
+              (parseFloat(document.getElementById('ret-iibb').value)||0);
+  document.getElementById('cobro-retenciones').value = ret.toFixed(2);
+  calcNeto();
+}
+
+function calcNeto(){
+  const total = parseFloat(document.getElementById('cobro-total-factura').textContent.replace('$ ','').replace(/\./g,'').replace(',','.')) || 0;
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  document.getElementById('cobro-ret-display').textContent = fmt(ret);
+  document.getElementById('cobro-neto').textContent = fmt(total - ret);
+}
+
+async function guardarCobro(){
+  const fecha = document.getElementById('cobro-fecha').value;
+  const monto = parseFloat(document.getElementById('cobro-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const ret = parseFloat(document.getElementById('cobro-retenciones').value) || 0;
+  const update = {
+    estadoCobro: 'cobrada',
+    fechaCobro: fecha,
+    medioCobro: document.getElementById('cobro-medio').value,
+    montoCobrado: monto,
+    retenciones: ret,
+    retIva: parseFloat(document.getElementById('ret-iva').value)||0,
+    retGanancias: parseFloat(document.getElementById('ret-ganancias').value)||0,
+    retIibb: parseFloat(document.getElementById('ret-iibb').value)||0,
+    netoRecibido: monto - ret,
+    obsCobro: document.getElementById('cobro-obs').value.trim()
+  };
+  await db.collection(cobroActualColeccion).doc(cobroActualId).update(update);
+  cerrarModal('modal-cobro'); toast('Cobro registrado ✓'); cargarCobros();
+}
+
+// ── PAGO ──
+function abrirPago(id, col, total){
+  pagoActualId = id; pagoActualColeccion = col;
+  document.getElementById('pago-fecha').valueAsDate = new Date();
+  document.getElementById('pago-monto').value = total.toFixed(2);
+  document.getElementById('pago-obs').value = '';
+  document.getElementById('modal-pago').classList.add('show');
+}
+
+async function guardarPago(){
+  const fecha = document.getElementById('pago-fecha').value;
+  const monto = parseFloat(document.getElementById('pago-monto').value) || 0;
+  if(!fecha || !monto){toast('Completá los campos obligatorios','error');return;}
+  const estadoField = pagoActualColeccion === 'producciones' ? 'estadoPagoFazon' : 'estadoPago';
+  await db.collection(pagoActualColeccion).doc(pagoActualId).update({
+    [estadoField]: 'pagada',
+    fechaPago: fecha,
+    medioPago: document.getElementById('pago-medio').value,
+    montoPagado: monto,
+    obsPago: document.getElementById('pago-obs').value.trim()
+  });
+  cerrarModal('modal-pago'); toast('Pago registrado ✓'); cargarCobros();
+}
+
+// ── CHEQUES ──
+function abrirModalCheque(){
+  document.getElementById('cheque-emision').valueAsDate = new Date();
+  document.getElementById('cheque-num').value = '';
+  document.getElementById('cheque-banco').value = '';
+  document.getElementById('cheque-monto').value = '';
+  document.getElementById('cheque-vto').value = '';
+  document.getElementById('cheque-tercero').value = '';
+  document.getElementById('cheque-obs').value = '';
+  document.getElementById('modal-cheque').classList.add('show');
+}
+
+async function guardarCheque(){
+  const num = document.getElementById('cheque-num').value.trim();
+  const banco = document.getElementById('cheque-banco').value.trim();
+  const monto = parseFloat(document.getElementById('cheque-monto').value) || 0;
+  const vto = document.getElementById('cheque-vto').value;
+  if(!num || !banco || !monto || !vto){toast('Completá los campos obligatorios','error');return;}
+  await db.collection('cheques').add({
+    tipo: document.getElementById('cheque-tipo').value,
+    numero: num, banco, monto, vto,
+    emision: document.getElementById('cheque-emision').value,
+    tercero: document.getElementById('cheque-tercero').value.trim(),
+    obs: document.getElementById('cheque-obs').value.trim(),
+    estado: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+}
+
+async function cargarCheques(){
+  const snap = await db.collection('cheques').orderBy('vto','asc').get();
+  const tbody = document.getElementById('body-cheques');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin cheques registrados</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const dias = diasParaVencer(v.vto);
+    const vencido = dias < 0;
+    const urgente = dias >= 0 && dias <= 5;
+    const alertColor = v.estado==='acreditado'||v.estado==='debitado' ? 'green' : vencido ? 'red' : urgente ? 'amber' : 'gray';
+    const alertLabel = v.estado==='acreditado'?'Acreditado':v.estado==='debitado'?'Debitado':vencido?'Vencido':urgente?'En '+dias+' días':'Pendiente';
+    return `<tr>
+      <td><span class="badge badge-${v.tipo==='cobrar'?'green':'amber'}">${v.tipo==='cobrar'?'A cobrar':'A pagar'}</span></td>
+      <td class="td-mono">${v.numero}</td>
+      <td>${v.banco||'—'}</td>
+      <td>${v.tercero||'—'}</td>
+      <td>${v.emision ? new Date(v.emision+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td>${v.vto ? new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="td-right fw-600">${fmt(v.monto)}</td>
+      <td><span class="badge badge-${alertColor}">${alertLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
 }
