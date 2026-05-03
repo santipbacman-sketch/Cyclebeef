@@ -185,6 +185,7 @@ async function guardarProduccion(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarProducciones(){
@@ -314,7 +315,8 @@ function filtrarStock(){ cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); }
+  cargarCheques();
+  cargarDashboard(); }
 
 
 // ══ LOGÍSTICA ══
@@ -481,11 +483,13 @@ async function guardarViaje(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
   cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); // actualizar stock
+  cargarCheques();
+  cargarDashboard(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -708,6 +712,7 @@ async function guardarVenta(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarVentas(){
@@ -936,6 +941,7 @@ async function guardarCheque(){
     creado: firebase.firestore.FieldValue.serverTimestamp()
   });
   cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarCheques(){
@@ -964,6 +970,176 @@ async function cargarCheques(){
       <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
+}
+
+
+// ══ DASHBOARD ══
+async function cargarDashboard(){
+  const periodo = document.getElementById('rep-periodo').value;
+  const hoy = new Date();
+  let desde = new Date(0);
+  if(periodo === 'mes') desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  else if(periodo === 'trimestre') desde = new Date(hoy.getFullYear(), Math.floor(hoy.getMonth()/3)*3, 1);
+  else if(periodo === 'anio') desde = new Date(hoy.getFullYear(), 0, 1);
+  const desdeStr = desde.toISOString().split('T')[0];
+
+  // Cargar todo en paralelo
+  const [ventasSnap, entradasSnap, prodSnap, viajesSnap, chequesSnap] = await Promise.all([
+    db.collection('ventas').get(),
+    db.collection('entradas').get(),
+    db.collection('producciones').get(),
+    db.collection('viajes').get(),
+    db.collection('cheques').get()
+  ]);
+
+  // Filtrar por período
+  const filtrar = (docs) => docs.filter(d => {
+    const v = d.data();
+    const f = v.fecha || (v.creado ? v.creado.toDate().toISOString().split('T')[0] : '');
+    return periodo === 'todo' || f >= desdeStr;
+  });
+
+  const ventas = filtrar(ventasSnap.docs);
+  const entradas = filtrar(entradasSnap.docs);
+  const prods = filtrar(prodSnap.docs);
+  const viajes = filtrar(viajesSnap.docs);
+
+  // VENTAS
+  let ventasNeto = 0, ventasIva = 0, cobrado = 0, pendienteCobro = 0, retenciones = 0;
+  ventas.forEach(d => {
+    const v = d.data();
+    ventasNeto += v.totalNeto || 0;
+    ventasIva += v.iva || 0;
+    if(v.estadoCobro === 'cobrada'){ cobrado += v.netoRecibido || v.totalConIva || 0; retenciones += v.retenciones || 0; }
+    else pendienteCobro += v.totalConIva || 0;
+  });
+
+  // COSTOS
+  let costoCarne = 0, kgCarne = 0;
+  entradas.forEach(d => { const v=d.data(); costoCarne += v.totalNeto||0; kgCarne += v.totalKg||0; });
+
+  let costoFazon = 0, ivaFazon = 0, kgFazon = 0;
+  prods.forEach(d => { const v=d.data(); costoFazon += v.fazonNeto||0; ivaFazon += v.fazonIva||0; kgFazon += v.kgProducido||0; });
+
+  let costoLog = 0, ivaLog = 0, totalKgLog = 0;
+  viajes.forEach(d => { const v=d.data(); costoLog += v.costoNeto||0; ivaLog += v.iva||0; totalKgLog += v.totalKg||0; });
+
+  // MERMA
+  let totalEntrada = 0, totalProducido = 0, totalMermaKg = 0;
+  prods.forEach(d => { const v=d.data(); totalEntrada += v.kgEntrada||0; totalProducido += v.kgProducido||0; totalMermaKg += v.merma||0; });
+  const mermaPorc = totalEntrada > 0 ? (totalMermaKg/totalEntrada*100) : 0;
+
+  // RESULTADO
+  const costoTotal = costoCarne + costoFazon + costoLog;
+  const resultado = ventasNeto - costoTotal;
+  const margen = ventasNeto > 0 ? (resultado/ventasNeto*100) : 0;
+
+  // IVA
+  const ivaDebito = ventasIva;
+  const ivaCredito = ivaFazon + ivaLog;
+  const posicionIva = ivaDebito - ivaCredito;
+
+  // Actualizar cards
+  document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
+  document.getElementById('dash-cobrado').textContent = fmt(cobrado);
+  document.getElementById('dash-pendiente-cobro').textContent = fmt(pendienteCobro) + ' pendiente';
+  document.getElementById('dash-costos').textContent = fmt(costoTotal);
+  document.getElementById('dash-resultado').textContent = fmt(resultado);
+  document.getElementById('dash-resultado').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('dash-margen').textContent = margen.toFixed(1) + '% margen';
+  document.getElementById('dash-costo-carne').textContent = fmt(costoCarne);
+  document.getElementById('dash-kg-carne').textContent = fmtKg(kgCarne);
+  document.getElementById('dash-costo-fazon').textContent = fmt(costoFazon);
+  document.getElementById('dash-kg-fazon').textContent = fmtKg(kgFazon) + ' producidos';
+  document.getElementById('dash-costo-logistica').textContent = fmt(costoLog);
+  document.getElementById('dash-costo-kg-logistica').textContent = fmt(totalKgLog > 0 ? costoLog/totalKgLog : 0) + '/kg';
+  document.getElementById('dash-merma').textContent = mermaPorc.toFixed(1) + '%';
+  document.getElementById('dash-merma-kg').textContent = fmtKg(totalMermaKg) + ' perdidos';
+
+  // Detalle económico
+  document.getElementById('rep-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('rep-cobrado').textContent = fmt(cobrado);
+  document.getElementById('rep-retenciones').textContent = fmt(retenciones);
+  document.getElementById('rep-carne').textContent = fmt(costoCarne);
+  document.getElementById('rep-fazon').textContent = fmt(costoFazon);
+  document.getElementById('rep-logistica').textContent = fmt(costoLog);
+  document.getElementById('rep-resultado-eco').textContent = fmt(resultado);
+  document.getElementById('rep-resultado-eco').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('rep-iva-debito').textContent = fmt(ivaDebito);
+  document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
+  document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
+  document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+
+  // Ventas por cliente
+  const porCliente = {};
+  ventas.forEach(d => {
+    const v = d.data();
+    if(!porCliente[v.clienteNombre]) porCliente[v.clienteNombre] = {neto:0, count:0};
+    porCliente[v.clienteNombre].neto += v.totalNeto || 0;
+    porCliente[v.clienteNombre].count++;
+  });
+  const clientesOrden = Object.entries(porCliente).sort((a,b) => b[1].neto - a[1].neto);
+  document.getElementById('dash-ventas-cliente').innerHTML = clientesOrden.length === 0 
+    ? '<div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div>'
+    : clientesOrden.map(([nombre, data]) => `
+      <div class="iva-row"><span class="iva-label">${nombre}</span><span class="fw-600">${fmt(data.neto)} <span class="text-sm text-muted">(${data.count} fact.)</span></span></div>
+    `).join('');
+
+  // Posición IVA
+  document.getElementById('dash-iva').innerHTML = `
+    <div class="iva-row"><span class="iva-label">Débito fiscal (ventas)</span><span style="color:var(--red)">${fmt(ivaDebito)}</span></div>
+    <div class="iva-row"><span class="iva-label">Crédito fiscal (compras)</span><span style="color:var(--g3)">${fmt(ivaCredito)}</span></div>
+    <div class="iva-row"><span class="iva-label fw-600">Saldo a pagar</span><span class="fw-600" style="color:${posicionIva>=0?'var(--amber)':'var(--g2)'}">${fmt(posicionIva)}</span></div>
+  `;
+
+  // Cheques próximos 30 días
+  const hoy30 = new Date(); hoy30.setDate(hoy30.getDate()+30);
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoy30Str = hoy30.toISOString().split('T')[0];
+
+  const chequesCobrar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'cobrar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+  const chequesPagar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'pagar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+
+  document.getElementById('dash-cheques-cobrar').innerHTML = chequesCobrar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesCobrar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--g2)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  document.getElementById('dash-cheques-pagar').innerHTML = chequesPagar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesPagar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--red)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  // Alertas
+  const alertas = [];
+  chequesSnap.docs.forEach(d => {
+    const v = d.data();
+    if(v.estado === 'pendiente'){
+      const dias = diasParaVencer(v.vto);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} vence en ${dias} días — ${fmt(v.monto)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} VENCIDO — ${fmt(v.monto)}`});
+    }
+  });
+  ventas.forEach(d => {
+    const v = d.data();
+    if(v.estadoCobro !== 'cobrada'){
+      const dias = diasParaVencer(v.vencimiento);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cobro de ${v.clienteNombre} vence en ${dias} días — ${fmt(v.totalConIva)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cobro VENCIDO de ${v.clienteNombre} — ${fmt(v.totalConIva)}`});
+    }
+  });
+
+  const alertasEl = document.getElementById('dash-alertas');
+  alertasEl.innerHTML = alertas.length === 0 ? '' : alertas.map(a => `
+    <div style="background:${a.tipo==='red'?'var(--red-pale)':'var(--amber-pale)'};border-left:3px solid ${a.tipo==='red'?'var(--red)':'var(--amber)'};border-radius:6px;padding:10px 16px;margin-bottom:8px;font-size:13px;color:${a.tipo==='red'?'var(--red)':'var(--amber)'}">
+      ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
+    </div>
+  `).join('');
 }
 
 </script>
@@ -1146,6 +1322,7 @@ async function guardarProduccion(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarProducciones(){
@@ -1275,7 +1452,8 @@ function filtrarStock(){ cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); }
+  cargarCheques();
+  cargarDashboard(); }
 
 
 // ══ LOGÍSTICA ══
@@ -1442,11 +1620,13 @@ async function guardarViaje(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
   cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); // actualizar stock
+  cargarCheques();
+  cargarDashboard(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -1669,6 +1849,7 @@ async function guardarVenta(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarVentas(){
@@ -1897,6 +2078,7 @@ async function guardarCheque(){
     creado: firebase.firestore.FieldValue.serverTimestamp()
   });
   cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarCheques(){
@@ -1925,6 +2107,176 @@ async function cargarCheques(){
       <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
+}
+
+
+// ══ DASHBOARD ══
+async function cargarDashboard(){
+  const periodo = document.getElementById('rep-periodo').value;
+  const hoy = new Date();
+  let desde = new Date(0);
+  if(periodo === 'mes') desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  else if(periodo === 'trimestre') desde = new Date(hoy.getFullYear(), Math.floor(hoy.getMonth()/3)*3, 1);
+  else if(periodo === 'anio') desde = new Date(hoy.getFullYear(), 0, 1);
+  const desdeStr = desde.toISOString().split('T')[0];
+
+  // Cargar todo en paralelo
+  const [ventasSnap, entradasSnap, prodSnap, viajesSnap, chequesSnap] = await Promise.all([
+    db.collection('ventas').get(),
+    db.collection('entradas').get(),
+    db.collection('producciones').get(),
+    db.collection('viajes').get(),
+    db.collection('cheques').get()
+  ]);
+
+  // Filtrar por período
+  const filtrar = (docs) => docs.filter(d => {
+    const v = d.data();
+    const f = v.fecha || (v.creado ? v.creado.toDate().toISOString().split('T')[0] : '');
+    return periodo === 'todo' || f >= desdeStr;
+  });
+
+  const ventas = filtrar(ventasSnap.docs);
+  const entradas = filtrar(entradasSnap.docs);
+  const prods = filtrar(prodSnap.docs);
+  const viajes = filtrar(viajesSnap.docs);
+
+  // VENTAS
+  let ventasNeto = 0, ventasIva = 0, cobrado = 0, pendienteCobro = 0, retenciones = 0;
+  ventas.forEach(d => {
+    const v = d.data();
+    ventasNeto += v.totalNeto || 0;
+    ventasIva += v.iva || 0;
+    if(v.estadoCobro === 'cobrada'){ cobrado += v.netoRecibido || v.totalConIva || 0; retenciones += v.retenciones || 0; }
+    else pendienteCobro += v.totalConIva || 0;
+  });
+
+  // COSTOS
+  let costoCarne = 0, kgCarne = 0;
+  entradas.forEach(d => { const v=d.data(); costoCarne += v.totalNeto||0; kgCarne += v.totalKg||0; });
+
+  let costoFazon = 0, ivaFazon = 0, kgFazon = 0;
+  prods.forEach(d => { const v=d.data(); costoFazon += v.fazonNeto||0; ivaFazon += v.fazonIva||0; kgFazon += v.kgProducido||0; });
+
+  let costoLog = 0, ivaLog = 0, totalKgLog = 0;
+  viajes.forEach(d => { const v=d.data(); costoLog += v.costoNeto||0; ivaLog += v.iva||0; totalKgLog += v.totalKg||0; });
+
+  // MERMA
+  let totalEntrada = 0, totalProducido = 0, totalMermaKg = 0;
+  prods.forEach(d => { const v=d.data(); totalEntrada += v.kgEntrada||0; totalProducido += v.kgProducido||0; totalMermaKg += v.merma||0; });
+  const mermaPorc = totalEntrada > 0 ? (totalMermaKg/totalEntrada*100) : 0;
+
+  // RESULTADO
+  const costoTotal = costoCarne + costoFazon + costoLog;
+  const resultado = ventasNeto - costoTotal;
+  const margen = ventasNeto > 0 ? (resultado/ventasNeto*100) : 0;
+
+  // IVA
+  const ivaDebito = ventasIva;
+  const ivaCredito = ivaFazon + ivaLog;
+  const posicionIva = ivaDebito - ivaCredito;
+
+  // Actualizar cards
+  document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
+  document.getElementById('dash-cobrado').textContent = fmt(cobrado);
+  document.getElementById('dash-pendiente-cobro').textContent = fmt(pendienteCobro) + ' pendiente';
+  document.getElementById('dash-costos').textContent = fmt(costoTotal);
+  document.getElementById('dash-resultado').textContent = fmt(resultado);
+  document.getElementById('dash-resultado').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('dash-margen').textContent = margen.toFixed(1) + '% margen';
+  document.getElementById('dash-costo-carne').textContent = fmt(costoCarne);
+  document.getElementById('dash-kg-carne').textContent = fmtKg(kgCarne);
+  document.getElementById('dash-costo-fazon').textContent = fmt(costoFazon);
+  document.getElementById('dash-kg-fazon').textContent = fmtKg(kgFazon) + ' producidos';
+  document.getElementById('dash-costo-logistica').textContent = fmt(costoLog);
+  document.getElementById('dash-costo-kg-logistica').textContent = fmt(totalKgLog > 0 ? costoLog/totalKgLog : 0) + '/kg';
+  document.getElementById('dash-merma').textContent = mermaPorc.toFixed(1) + '%';
+  document.getElementById('dash-merma-kg').textContent = fmtKg(totalMermaKg) + ' perdidos';
+
+  // Detalle económico
+  document.getElementById('rep-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('rep-cobrado').textContent = fmt(cobrado);
+  document.getElementById('rep-retenciones').textContent = fmt(retenciones);
+  document.getElementById('rep-carne').textContent = fmt(costoCarne);
+  document.getElementById('rep-fazon').textContent = fmt(costoFazon);
+  document.getElementById('rep-logistica').textContent = fmt(costoLog);
+  document.getElementById('rep-resultado-eco').textContent = fmt(resultado);
+  document.getElementById('rep-resultado-eco').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('rep-iva-debito').textContent = fmt(ivaDebito);
+  document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
+  document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
+  document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+
+  // Ventas por cliente
+  const porCliente = {};
+  ventas.forEach(d => {
+    const v = d.data();
+    if(!porCliente[v.clienteNombre]) porCliente[v.clienteNombre] = {neto:0, count:0};
+    porCliente[v.clienteNombre].neto += v.totalNeto || 0;
+    porCliente[v.clienteNombre].count++;
+  });
+  const clientesOrden = Object.entries(porCliente).sort((a,b) => b[1].neto - a[1].neto);
+  document.getElementById('dash-ventas-cliente').innerHTML = clientesOrden.length === 0 
+    ? '<div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div>'
+    : clientesOrden.map(([nombre, data]) => `
+      <div class="iva-row"><span class="iva-label">${nombre}</span><span class="fw-600">${fmt(data.neto)} <span class="text-sm text-muted">(${data.count} fact.)</span></span></div>
+    `).join('');
+
+  // Posición IVA
+  document.getElementById('dash-iva').innerHTML = `
+    <div class="iva-row"><span class="iva-label">Débito fiscal (ventas)</span><span style="color:var(--red)">${fmt(ivaDebito)}</span></div>
+    <div class="iva-row"><span class="iva-label">Crédito fiscal (compras)</span><span style="color:var(--g3)">${fmt(ivaCredito)}</span></div>
+    <div class="iva-row"><span class="iva-label fw-600">Saldo a pagar</span><span class="fw-600" style="color:${posicionIva>=0?'var(--amber)':'var(--g2)'}">${fmt(posicionIva)}</span></div>
+  `;
+
+  // Cheques próximos 30 días
+  const hoy30 = new Date(); hoy30.setDate(hoy30.getDate()+30);
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoy30Str = hoy30.toISOString().split('T')[0];
+
+  const chequesCobrar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'cobrar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+  const chequesPagar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'pagar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+
+  document.getElementById('dash-cheques-cobrar').innerHTML = chequesCobrar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesCobrar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--g2)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  document.getElementById('dash-cheques-pagar').innerHTML = chequesPagar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesPagar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--red)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  // Alertas
+  const alertas = [];
+  chequesSnap.docs.forEach(d => {
+    const v = d.data();
+    if(v.estado === 'pendiente'){
+      const dias = diasParaVencer(v.vto);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} vence en ${dias} días — ${fmt(v.monto)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} VENCIDO — ${fmt(v.monto)}`});
+    }
+  });
+  ventas.forEach(d => {
+    const v = d.data();
+    if(v.estadoCobro !== 'cobrada'){
+      const dias = diasParaVencer(v.vencimiento);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cobro de ${v.clienteNombre} vence en ${dias} días — ${fmt(v.totalConIva)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cobro VENCIDO de ${v.clienteNombre} — ${fmt(v.totalConIva)}`});
+    }
+  });
+
+  const alertasEl = document.getElementById('dash-alertas');
+  alertasEl.innerHTML = alertas.length === 0 ? '' : alertas.map(a => `
+    <div style="background:${a.tipo==='red'?'var(--red-pale)':'var(--amber-pale)'};border-left:3px solid ${a.tipo==='red'?'var(--red)':'var(--amber)'};border-radius:6px;padding:10px 16px;margin-bottom:8px;font-size:13px;color:${a.tipo==='red'?'var(--red)':'var(--amber)'}">
+      ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
+    </div>
+  `).join('');
 }
 
 </script>
@@ -2107,6 +2459,7 @@ async function guardarProduccion(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarProducciones(){
@@ -2236,7 +2589,8 @@ function filtrarStock(){ cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); }
+  cargarCheques();
+  cargarDashboard(); }
 
 
 // ══ LOGÍSTICA ══
@@ -2403,11 +2757,13 @@ async function guardarViaje(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
   cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); // actualizar stock
+  cargarCheques();
+  cargarDashboard(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -2630,6 +2986,7 @@ async function guardarVenta(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarVentas(){
@@ -2858,6 +3215,7 @@ async function guardarCheque(){
     creado: firebase.firestore.FieldValue.serverTimestamp()
   });
   cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarCheques(){
@@ -2886,6 +3244,176 @@ async function cargarCheques(){
       <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
+}
+
+
+// ══ DASHBOARD ══
+async function cargarDashboard(){
+  const periodo = document.getElementById('rep-periodo').value;
+  const hoy = new Date();
+  let desde = new Date(0);
+  if(periodo === 'mes') desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  else if(periodo === 'trimestre') desde = new Date(hoy.getFullYear(), Math.floor(hoy.getMonth()/3)*3, 1);
+  else if(periodo === 'anio') desde = new Date(hoy.getFullYear(), 0, 1);
+  const desdeStr = desde.toISOString().split('T')[0];
+
+  // Cargar todo en paralelo
+  const [ventasSnap, entradasSnap, prodSnap, viajesSnap, chequesSnap] = await Promise.all([
+    db.collection('ventas').get(),
+    db.collection('entradas').get(),
+    db.collection('producciones').get(),
+    db.collection('viajes').get(),
+    db.collection('cheques').get()
+  ]);
+
+  // Filtrar por período
+  const filtrar = (docs) => docs.filter(d => {
+    const v = d.data();
+    const f = v.fecha || (v.creado ? v.creado.toDate().toISOString().split('T')[0] : '');
+    return periodo === 'todo' || f >= desdeStr;
+  });
+
+  const ventas = filtrar(ventasSnap.docs);
+  const entradas = filtrar(entradasSnap.docs);
+  const prods = filtrar(prodSnap.docs);
+  const viajes = filtrar(viajesSnap.docs);
+
+  // VENTAS
+  let ventasNeto = 0, ventasIva = 0, cobrado = 0, pendienteCobro = 0, retenciones = 0;
+  ventas.forEach(d => {
+    const v = d.data();
+    ventasNeto += v.totalNeto || 0;
+    ventasIva += v.iva || 0;
+    if(v.estadoCobro === 'cobrada'){ cobrado += v.netoRecibido || v.totalConIva || 0; retenciones += v.retenciones || 0; }
+    else pendienteCobro += v.totalConIva || 0;
+  });
+
+  // COSTOS
+  let costoCarne = 0, kgCarne = 0;
+  entradas.forEach(d => { const v=d.data(); costoCarne += v.totalNeto||0; kgCarne += v.totalKg||0; });
+
+  let costoFazon = 0, ivaFazon = 0, kgFazon = 0;
+  prods.forEach(d => { const v=d.data(); costoFazon += v.fazonNeto||0; ivaFazon += v.fazonIva||0; kgFazon += v.kgProducido||0; });
+
+  let costoLog = 0, ivaLog = 0, totalKgLog = 0;
+  viajes.forEach(d => { const v=d.data(); costoLog += v.costoNeto||0; ivaLog += v.iva||0; totalKgLog += v.totalKg||0; });
+
+  // MERMA
+  let totalEntrada = 0, totalProducido = 0, totalMermaKg = 0;
+  prods.forEach(d => { const v=d.data(); totalEntrada += v.kgEntrada||0; totalProducido += v.kgProducido||0; totalMermaKg += v.merma||0; });
+  const mermaPorc = totalEntrada > 0 ? (totalMermaKg/totalEntrada*100) : 0;
+
+  // RESULTADO
+  const costoTotal = costoCarne + costoFazon + costoLog;
+  const resultado = ventasNeto - costoTotal;
+  const margen = ventasNeto > 0 ? (resultado/ventasNeto*100) : 0;
+
+  // IVA
+  const ivaDebito = ventasIva;
+  const ivaCredito = ivaFazon + ivaLog;
+  const posicionIva = ivaDebito - ivaCredito;
+
+  // Actualizar cards
+  document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
+  document.getElementById('dash-cobrado').textContent = fmt(cobrado);
+  document.getElementById('dash-pendiente-cobro').textContent = fmt(pendienteCobro) + ' pendiente';
+  document.getElementById('dash-costos').textContent = fmt(costoTotal);
+  document.getElementById('dash-resultado').textContent = fmt(resultado);
+  document.getElementById('dash-resultado').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('dash-margen').textContent = margen.toFixed(1) + '% margen';
+  document.getElementById('dash-costo-carne').textContent = fmt(costoCarne);
+  document.getElementById('dash-kg-carne').textContent = fmtKg(kgCarne);
+  document.getElementById('dash-costo-fazon').textContent = fmt(costoFazon);
+  document.getElementById('dash-kg-fazon').textContent = fmtKg(kgFazon) + ' producidos';
+  document.getElementById('dash-costo-logistica').textContent = fmt(costoLog);
+  document.getElementById('dash-costo-kg-logistica').textContent = fmt(totalKgLog > 0 ? costoLog/totalKgLog : 0) + '/kg';
+  document.getElementById('dash-merma').textContent = mermaPorc.toFixed(1) + '%';
+  document.getElementById('dash-merma-kg').textContent = fmtKg(totalMermaKg) + ' perdidos';
+
+  // Detalle económico
+  document.getElementById('rep-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('rep-cobrado').textContent = fmt(cobrado);
+  document.getElementById('rep-retenciones').textContent = fmt(retenciones);
+  document.getElementById('rep-carne').textContent = fmt(costoCarne);
+  document.getElementById('rep-fazon').textContent = fmt(costoFazon);
+  document.getElementById('rep-logistica').textContent = fmt(costoLog);
+  document.getElementById('rep-resultado-eco').textContent = fmt(resultado);
+  document.getElementById('rep-resultado-eco').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('rep-iva-debito').textContent = fmt(ivaDebito);
+  document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
+  document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
+  document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+
+  // Ventas por cliente
+  const porCliente = {};
+  ventas.forEach(d => {
+    const v = d.data();
+    if(!porCliente[v.clienteNombre]) porCliente[v.clienteNombre] = {neto:0, count:0};
+    porCliente[v.clienteNombre].neto += v.totalNeto || 0;
+    porCliente[v.clienteNombre].count++;
+  });
+  const clientesOrden = Object.entries(porCliente).sort((a,b) => b[1].neto - a[1].neto);
+  document.getElementById('dash-ventas-cliente').innerHTML = clientesOrden.length === 0 
+    ? '<div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div>'
+    : clientesOrden.map(([nombre, data]) => `
+      <div class="iva-row"><span class="iva-label">${nombre}</span><span class="fw-600">${fmt(data.neto)} <span class="text-sm text-muted">(${data.count} fact.)</span></span></div>
+    `).join('');
+
+  // Posición IVA
+  document.getElementById('dash-iva').innerHTML = `
+    <div class="iva-row"><span class="iva-label">Débito fiscal (ventas)</span><span style="color:var(--red)">${fmt(ivaDebito)}</span></div>
+    <div class="iva-row"><span class="iva-label">Crédito fiscal (compras)</span><span style="color:var(--g3)">${fmt(ivaCredito)}</span></div>
+    <div class="iva-row"><span class="iva-label fw-600">Saldo a pagar</span><span class="fw-600" style="color:${posicionIva>=0?'var(--amber)':'var(--g2)'}">${fmt(posicionIva)}</span></div>
+  `;
+
+  // Cheques próximos 30 días
+  const hoy30 = new Date(); hoy30.setDate(hoy30.getDate()+30);
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoy30Str = hoy30.toISOString().split('T')[0];
+
+  const chequesCobrar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'cobrar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+  const chequesPagar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'pagar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+
+  document.getElementById('dash-cheques-cobrar').innerHTML = chequesCobrar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesCobrar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--g2)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  document.getElementById('dash-cheques-pagar').innerHTML = chequesPagar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesPagar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--red)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  // Alertas
+  const alertas = [];
+  chequesSnap.docs.forEach(d => {
+    const v = d.data();
+    if(v.estado === 'pendiente'){
+      const dias = diasParaVencer(v.vto);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} vence en ${dias} días — ${fmt(v.monto)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} VENCIDO — ${fmt(v.monto)}`});
+    }
+  });
+  ventas.forEach(d => {
+    const v = d.data();
+    if(v.estadoCobro !== 'cobrada'){
+      const dias = diasParaVencer(v.vencimiento);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cobro de ${v.clienteNombre} vence en ${dias} días — ${fmt(v.totalConIva)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cobro VENCIDO de ${v.clienteNombre} — ${fmt(v.totalConIva)}`});
+    }
+  });
+
+  const alertasEl = document.getElementById('dash-alertas');
+  alertasEl.innerHTML = alertas.length === 0 ? '' : alertas.map(a => `
+    <div style="background:${a.tipo==='red'?'var(--red-pale)':'var(--amber-pale)'};border-left:3px solid ${a.tipo==='red'?'var(--red)':'var(--amber)'};border-radius:6px;padding:10px 16px;margin-bottom:8px;font-size:13px;color:${a.tipo==='red'?'var(--red)':'var(--amber)'}">
+      ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
+    </div>
+  `).join('');
 }
 
 </script>
@@ -3308,7 +3836,112 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     </div>
   </div>
 </div>
-<div class="page" id="page-reportes"><div class="page-header"><div class="page-title">Reportes</div></div><div class="card"><div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Próximamente</div></div></div></div>
+<div class="page" id="page-reportes">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Dashboard y Reportes</div><div class="page-sub">Resultado económico, financiero y análisis cruzado</div></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <select class="form-select" id="rep-periodo" onchange="cargarDashboard()" style="width:160px">
+        <option value="mes">Este mes</option>
+        <option value="trimestre">Este trimestre</option>
+        <option value="anio">Este año</option>
+        <option value="todo">Todo</option>
+      </select>
+      <button class="btn btn-secondary" onclick="cargarDashboard()">↻ Actualizar</button>
+    </div>
+  </div>
+
+  <!-- ALERTAS -->
+  <div id="dash-alertas" style="margin-bottom:24px"></div>
+
+  <!-- CARDS PRINCIPALES -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px">
+    <div class="stock-card">
+      <div class="stock-card-label">Ventas netas</div>
+      <div class="stock-card-val" id="dash-ventas-neto">$ 0</div>
+      <div class="stock-card-sub" id="dash-ventas-count">0 facturas</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Cobrado</div>
+      <div class="stock-card-val" id="dash-cobrado" style="color:var(--g3)">$ 0</div>
+      <div class="stock-card-sub" id="dash-pendiente-cobro">$ 0 pendiente</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Costos totales</div>
+      <div class="stock-card-val" id="dash-costos" style="color:var(--red)">$ 0</div>
+      <div class="stock-card-sub">Carne + Fazón + Logística</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Resultado</div>
+      <div class="stock-card-val" id="dash-resultado">$ 0</div>
+      <div class="stock-card-sub" id="dash-margen">0% margen</div>
+    </div>
+  </div>
+
+  <!-- SEGUNDA FILA -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px">
+    <div class="stock-card">
+      <div class="stock-card-label">Costo carne</div>
+      <div class="stock-card-val" id="dash-costo-carne" style="font-size:22px">$ 0</div>
+      <div class="stock-card-sub" id="dash-kg-carne">0 kg</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Costo fazón</div>
+      <div class="stock-card-val" id="dash-costo-fazon" style="font-size:22px">$ 0</div>
+      <div class="stock-card-sub" id="dash-kg-fazon">0 kg producidos</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Costo logística</div>
+      <div class="stock-card-val" id="dash-costo-logistica" style="font-size:22px">$ 0</div>
+      <div class="stock-card-sub" id="dash-costo-kg-logistica">$ 0/kg</div>
+    </div>
+    <div class="stock-card">
+      <div class="stock-card-label">Merma promedio</div>
+      <div class="stock-card-val" id="dash-merma" style="font-size:22px;color:var(--amber)">0%</div>
+      <div class="stock-card-sub" id="dash-merma-kg">0 kg perdidos</div>
+    </div>
+  </div>
+
+  <!-- CHEQUES PRÓXIMOS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">Cheques a cobrar próximos 30 días</div>
+      <div id="dash-cheques-cobrar"><div class="empty" style="padding:20px"><div class="empty-sub">Sin cheques próximos</div></div></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">Cheques a pagar próximos 30 días</div>
+      <div id="dash-cheques-pagar"><div class="empty" style="padding:20px"><div class="empty-sub">Sin cheques próximos</div></div></div>
+    </div>
+  </div>
+
+  <!-- VENTAS POR CLIENTE -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">Ventas por cliente</div>
+      <div id="dash-ventas-cliente"><div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div></div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">IVA — Posición fiscal</div>
+      <div id="dash-iva"><div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div></div>
+    </div>
+  </div>
+
+  <!-- TABLA DETALLE ECONÓMICO -->
+  <div class="card">
+    <div class="section-title" style="margin-bottom:16px">Detalle económico vs financiero</div>
+    <div class="iva-box">
+      <div class="iva-row"><span class="iva-label">Ventas facturadas (neto)</span><span id="rep-ventas-neto">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label">Ventas cobradas</span><span id="rep-cobrado">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label">Retenciones acumuladas</span><span id="rep-retenciones" style="color:var(--amber)">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label">Costo carne (neto)</span><span id="rep-carne">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label">Costo fazón (neto)</span><span id="rep-fazon">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label">Costo logística (neto)</span><span id="rep-logistica">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label" style="font-weight:600;color:var(--g2)">Resultado económico</span><span id="rep-resultado-eco" class="fw-600" style="color:var(--g2)">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label" style="font-weight:600">IVA débito fiscal</span><span id="rep-iva-debito">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label" style="font-weight:600">IVA crédito fiscal</span><span id="rep-iva-credito">$ 0.00</span></div>
+      <div class="iva-row"><span class="iva-label" style="font-weight:600">Posición IVA</span><span id="rep-iva-posicion" class="fw-600">$ 0.00</span></div>
+    </div>
+  </div>
+</div>
 
 </div><!-- /main -->
 
@@ -3809,6 +4442,7 @@ async function init(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 // ── NAV ──
@@ -4139,6 +4773,7 @@ async function guardarEntrada(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarEntradas(){
@@ -4342,6 +4977,7 @@ async function guardarProduccion(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarProducciones(){
@@ -4471,7 +5107,8 @@ function filtrarStock(){ cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); }
+  cargarCheques();
+  cargarDashboard(); }
 
 
 // ══ LOGÍSTICA ══
@@ -4638,11 +5275,13 @@ async function guardarViaje(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
   cargarStock();
   cargarViajes();
   cargarVentas();
   cargarCobros();
-  cargarCheques(); // actualizar stock
+  cargarCheques();
+  cargarDashboard(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -4865,6 +5504,7 @@ async function guardarVenta(){
   cargarVentas();
   cargarCobros();
   cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarVentas(){
@@ -5093,6 +5733,7 @@ async function guardarCheque(){
     creado: firebase.firestore.FieldValue.serverTimestamp()
   });
   cerrarModal('modal-cheque'); toast('Cheque guardado ✓'); cargarCheques();
+  cargarDashboard();
 }
 
 async function cargarCheques(){
@@ -5121,6 +5762,176 @@ async function cargarCheques(){
       <td><button class="btn-icon" onclick="eliminar('cheques','${d.id}',cargarCheques)">🗑</button></td>
     </tr>`;
   }).join('');
+}
+
+
+// ══ DASHBOARD ══
+async function cargarDashboard(){
+  const periodo = document.getElementById('rep-periodo').value;
+  const hoy = new Date();
+  let desde = new Date(0);
+  if(periodo === 'mes') desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  else if(periodo === 'trimestre') desde = new Date(hoy.getFullYear(), Math.floor(hoy.getMonth()/3)*3, 1);
+  else if(periodo === 'anio') desde = new Date(hoy.getFullYear(), 0, 1);
+  const desdeStr = desde.toISOString().split('T')[0];
+
+  // Cargar todo en paralelo
+  const [ventasSnap, entradasSnap, prodSnap, viajesSnap, chequesSnap] = await Promise.all([
+    db.collection('ventas').get(),
+    db.collection('entradas').get(),
+    db.collection('producciones').get(),
+    db.collection('viajes').get(),
+    db.collection('cheques').get()
+  ]);
+
+  // Filtrar por período
+  const filtrar = (docs) => docs.filter(d => {
+    const v = d.data();
+    const f = v.fecha || (v.creado ? v.creado.toDate().toISOString().split('T')[0] : '');
+    return periodo === 'todo' || f >= desdeStr;
+  });
+
+  const ventas = filtrar(ventasSnap.docs);
+  const entradas = filtrar(entradasSnap.docs);
+  const prods = filtrar(prodSnap.docs);
+  const viajes = filtrar(viajesSnap.docs);
+
+  // VENTAS
+  let ventasNeto = 0, ventasIva = 0, cobrado = 0, pendienteCobro = 0, retenciones = 0;
+  ventas.forEach(d => {
+    const v = d.data();
+    ventasNeto += v.totalNeto || 0;
+    ventasIva += v.iva || 0;
+    if(v.estadoCobro === 'cobrada'){ cobrado += v.netoRecibido || v.totalConIva || 0; retenciones += v.retenciones || 0; }
+    else pendienteCobro += v.totalConIva || 0;
+  });
+
+  // COSTOS
+  let costoCarne = 0, kgCarne = 0;
+  entradas.forEach(d => { const v=d.data(); costoCarne += v.totalNeto||0; kgCarne += v.totalKg||0; });
+
+  let costoFazon = 0, ivaFazon = 0, kgFazon = 0;
+  prods.forEach(d => { const v=d.data(); costoFazon += v.fazonNeto||0; ivaFazon += v.fazonIva||0; kgFazon += v.kgProducido||0; });
+
+  let costoLog = 0, ivaLog = 0, totalKgLog = 0;
+  viajes.forEach(d => { const v=d.data(); costoLog += v.costoNeto||0; ivaLog += v.iva||0; totalKgLog += v.totalKg||0; });
+
+  // MERMA
+  let totalEntrada = 0, totalProducido = 0, totalMermaKg = 0;
+  prods.forEach(d => { const v=d.data(); totalEntrada += v.kgEntrada||0; totalProducido += v.kgProducido||0; totalMermaKg += v.merma||0; });
+  const mermaPorc = totalEntrada > 0 ? (totalMermaKg/totalEntrada*100) : 0;
+
+  // RESULTADO
+  const costoTotal = costoCarne + costoFazon + costoLog;
+  const resultado = ventasNeto - costoTotal;
+  const margen = ventasNeto > 0 ? (resultado/ventasNeto*100) : 0;
+
+  // IVA
+  const ivaDebito = ventasIva;
+  const ivaCredito = ivaFazon + ivaLog;
+  const posicionIva = ivaDebito - ivaCredito;
+
+  // Actualizar cards
+  document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
+  document.getElementById('dash-cobrado').textContent = fmt(cobrado);
+  document.getElementById('dash-pendiente-cobro').textContent = fmt(pendienteCobro) + ' pendiente';
+  document.getElementById('dash-costos').textContent = fmt(costoTotal);
+  document.getElementById('dash-resultado').textContent = fmt(resultado);
+  document.getElementById('dash-resultado').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('dash-margen').textContent = margen.toFixed(1) + '% margen';
+  document.getElementById('dash-costo-carne').textContent = fmt(costoCarne);
+  document.getElementById('dash-kg-carne').textContent = fmtKg(kgCarne);
+  document.getElementById('dash-costo-fazon').textContent = fmt(costoFazon);
+  document.getElementById('dash-kg-fazon').textContent = fmtKg(kgFazon) + ' producidos';
+  document.getElementById('dash-costo-logistica').textContent = fmt(costoLog);
+  document.getElementById('dash-costo-kg-logistica').textContent = fmt(totalKgLog > 0 ? costoLog/totalKgLog : 0) + '/kg';
+  document.getElementById('dash-merma').textContent = mermaPorc.toFixed(1) + '%';
+  document.getElementById('dash-merma-kg').textContent = fmtKg(totalMermaKg) + ' perdidos';
+
+  // Detalle económico
+  document.getElementById('rep-ventas-neto').textContent = fmt(ventasNeto);
+  document.getElementById('rep-cobrado').textContent = fmt(cobrado);
+  document.getElementById('rep-retenciones').textContent = fmt(retenciones);
+  document.getElementById('rep-carne').textContent = fmt(costoCarne);
+  document.getElementById('rep-fazon').textContent = fmt(costoFazon);
+  document.getElementById('rep-logistica').textContent = fmt(costoLog);
+  document.getElementById('rep-resultado-eco').textContent = fmt(resultado);
+  document.getElementById('rep-resultado-eco').style.color = resultado >= 0 ? 'var(--g2)' : 'var(--red)';
+  document.getElementById('rep-iva-debito').textContent = fmt(ivaDebito);
+  document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
+  document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
+  document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+
+  // Ventas por cliente
+  const porCliente = {};
+  ventas.forEach(d => {
+    const v = d.data();
+    if(!porCliente[v.clienteNombre]) porCliente[v.clienteNombre] = {neto:0, count:0};
+    porCliente[v.clienteNombre].neto += v.totalNeto || 0;
+    porCliente[v.clienteNombre].count++;
+  });
+  const clientesOrden = Object.entries(porCliente).sort((a,b) => b[1].neto - a[1].neto);
+  document.getElementById('dash-ventas-cliente').innerHTML = clientesOrden.length === 0 
+    ? '<div class="empty" style="padding:20px"><div class="empty-sub">Sin datos</div></div>'
+    : clientesOrden.map(([nombre, data]) => `
+      <div class="iva-row"><span class="iva-label">${nombre}</span><span class="fw-600">${fmt(data.neto)} <span class="text-sm text-muted">(${data.count} fact.)</span></span></div>
+    `).join('');
+
+  // Posición IVA
+  document.getElementById('dash-iva').innerHTML = `
+    <div class="iva-row"><span class="iva-label">Débito fiscal (ventas)</span><span style="color:var(--red)">${fmt(ivaDebito)}</span></div>
+    <div class="iva-row"><span class="iva-label">Crédito fiscal (compras)</span><span style="color:var(--g3)">${fmt(ivaCredito)}</span></div>
+    <div class="iva-row"><span class="iva-label fw-600">Saldo a pagar</span><span class="fw-600" style="color:${posicionIva>=0?'var(--amber)':'var(--g2)'}">${fmt(posicionIva)}</span></div>
+  `;
+
+  // Cheques próximos 30 días
+  const hoy30 = new Date(); hoy30.setDate(hoy30.getDate()+30);
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoy30Str = hoy30.toISOString().split('T')[0];
+
+  const chequesCobrar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'cobrar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+  const chequesPagar = chequesSnap.docs.filter(d => {
+    const v = d.data();
+    return v.tipo === 'pagar' && v.estado === 'pendiente' && v.vto >= hoyStr && v.vto <= hoy30Str;
+  });
+
+  document.getElementById('dash-cheques-cobrar').innerHTML = chequesCobrar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesCobrar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--g2)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  document.getElementById('dash-cheques-pagar').innerHTML = chequesPagar.length === 0
+    ? '<div class="empty" style="padding:12px"><div class="empty-sub">Sin cheques próximos</div></div>'
+    : chequesPagar.map(d => { const v=d.data(); return `<div class="iva-row"><span class="iva-label">${v.banco} #${v.numero}<br><span style="font-size:11px">${new Date(v.vto+'T12:00:00').toLocaleDateString('es-AR')}</span></span><span class="fw-600" style="color:var(--red)">${fmt(v.monto)}</span></div>`; }).join('');
+
+  // Alertas
+  const alertas = [];
+  chequesSnap.docs.forEach(d => {
+    const v = d.data();
+    if(v.estado === 'pendiente'){
+      const dias = diasParaVencer(v.vto);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} vence en ${dias} días — ${fmt(v.monto)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cheque ${v.tipo==='cobrar'?'a cobrar':'a pagar'} ${v.banco} #${v.numero} VENCIDO — ${fmt(v.monto)}`});
+    }
+  });
+  ventas.forEach(d => {
+    const v = d.data();
+    if(v.estadoCobro !== 'cobrada'){
+      const dias = diasParaVencer(v.vencimiento);
+      if(dias <= 3 && dias >= 0) alertas.push({tipo:'amber', msg: `Cobro de ${v.clienteNombre} vence en ${dias} días — ${fmt(v.totalConIva)}`});
+      else if(dias < 0) alertas.push({tipo:'red', msg: `Cobro VENCIDO de ${v.clienteNombre} — ${fmt(v.totalConIva)}`});
+    }
+  });
+
+  const alertasEl = document.getElementById('dash-alertas');
+  alertasEl.innerHTML = alertas.length === 0 ? '' : alertas.map(a => `
+    <div style="background:${a.tipo==='red'?'var(--red-pale)':'var(--amber-pale)'};border-left:3px solid ${a.tipo==='red'?'var(--red)':'var(--amber)'};border-radius:6px;padding:10px 16px;margin-bottom:8px;font-size:13px;color:${a.tipo==='red'?'var(--red)':'var(--amber)'}">
+      ${a.tipo==='red'?'🔴':'🟡'} ${a.msg}
+    </div>
+  `).join('');
 }
 
 </script>
