@@ -3467,7 +3467,7 @@ html,body{height:100%;font-family:var(--font-b);background:var(--cream);color:va
 /* SIDEBAR */
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar);background:var(--g1);display:flex;flex-direction:column;z-index:50;overflow-y:auto}
 .sidebar-logo{padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,0.06)}
-.sidebar-logo img{height:52px;width:auto;}
+.sidebar-logo img{height:52px;width:auto;object-fit:contain;}
 .sidebar-section{padding:18px 16px 4px;font-family:var(--font-h);font-size:9px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,0.28)}
 .nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;margin:1px 8px;border-radius:6px;cursor:pointer;font-family:var(--font-h);font-size:13px;font-weight:400;letter-spacing:0.5px;color:rgba(255,255,255,0.55);border:none;background:none;text-align:left;width:calc(100% - 16px);transition:all 0.15s}
 .nav-item:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.85)}
@@ -3611,6 +3611,8 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <button class="nav-item" onclick="irA('ventas',this)"><span class="nav-icon">🧾</span>Ventas</button>
   <div class="sidebar-section">Finanzas</div>
   <button class="nav-item" onclick="irA('cobros',this)"><span class="nav-icon">💰</span>Cobros y pagos</button>
+  <button class="nav-item" onclick="irA('personal',this)"><span class="nav-icon">👤</span>Personal</button>
+  <button class="nav-item" onclick="irA('costosfijos',this)"><span class="nav-icon">📋</span>Costos fijos</button>
   <button class="nav-item" onclick="irA('reportes',this)"><span class="nav-icon">📊</span>Reportes</button>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
@@ -4478,6 +4480,39 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
 </div>
 
+
+<!-- ══ PERSONAL ══ -->
+<div class="page" id="page-personal">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Personal</div><div class="page-sub">Empleados en relación de dependencia</div></div>
+    <button class="btn-primary" onclick="abrirModalPersonal()">+ Nuevo empleado</button>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr>
+        <th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+      </tr></thead>
+      <tbody id="body-personal"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══ COSTOS FIJOS ══ -->
+<div class="page" id="page-costosfijos">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Costos fijos</div><div class="page-sub">Gastos periódicos del negocio</div></div>
+    <button class="btn-primary" onclick="abrirModalCostoFijo()">+ Nuevo costo</button>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr>
+        <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+      </tr></thead>
+      <tbody id="body-costosfijos"></tbody>
+    </table>
+  </div>
+</div>
+
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",
@@ -4514,6 +4549,8 @@ function irA(pagina,el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+pagina).classList.add('active');
   el.classList.add('active');
+  if(pagina==='personal') cargarPersonal();
+  if(pagina==='costosfijos') cargarCostosFijos();
 }
 
 function cerrarSesion(){auth.signOut().then(()=>window.location.href='cyclebeef-public.html');}
@@ -6010,5 +6047,98 @@ function cambiarTabCheques(tipo, el){
 }
 
 </script>
+
+<!-- MODAL PERSONAL -->
+<div class="modal" id="modal-personal">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header"><div class="modal-title">Empleado</div><button class="modal-close" onclick="cerrarModal('modal-personal')">×</button></div>
+    <div style="padding:24px 28px;display:grid;gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><label class="form-label">Nombre completo *</label><input type="text" class="form-input" id="per-nombre" placeholder="Juan García"></div>
+        <div><label class="form-label">CUIL *</label><input type="text" class="form-input" id="per-cuil" placeholder="20-12345678-9"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><label class="form-label">Fecha de ingreso *</label><input type="date" class="form-input" id="per-ingreso"></div>
+        <div><label class="form-label">Categoría / Puesto</label><input type="text" class="form-input" id="per-puesto" placeholder="Ej: Operario, Chofer"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <div><label class="form-label">Sueldo bruto *</label><input type="number" class="form-input" id="per-bruto" placeholder="0" oninput="calcSueldo()"></div>
+        <div><label class="form-label">Período</label>
+          <select class="form-select" id="per-periodo">
+            <option value="mensual">Mensual</option>
+            <option value="quincenal">Quincenal</option>
+            <option value="semanal">Semanal</option>
+          </select>
+        </div>
+        <div><label class="form-label">Estado pago</label>
+          <select class="form-select" id="per-estado">
+            <option value="pendiente">Pendiente</option>
+            <option value="pagado">Pagado</option>
+            <option value="adelanto">Adelanto</option>
+            <option value="deuda">Deuda</option>
+          </select>
+        </div>
+      </div>
+      <!-- Resumen liquidación -->
+      <div style="background:var(--sand);border-radius:8px;padding:14px 18px;font-size:13px;display:grid;gap:6px" id="resumen-sueldo">
+        <div style="font-weight:600;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Liquidación estimada</div>
+        <div style="display:flex;justify-content:space-between"><span>Sueldo bruto</span><span id="liq-bruto">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between"><span>Jubilación (11%)</span><span id="liq-jub" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between"><span>Obra social (3%)</span><span id="liq-os" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between"><span>Ley 19032 (3%)</span><span id="liq-ley" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:6px;font-weight:700"><span>Neto a cobrar</span><span id="liq-neto" style="color:var(--g2)">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--muted)"><span>Costo empleador (≈ +23%)</span><span id="liq-empleador">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)"><span>Aguinaldo mensual acumulado</span><span id="liq-aguinaldo">$0,00</span></div>
+      </div>
+      <div><label class="form-label">Saldo / Observación</label><input type="number" class="form-input" id="per-saldo" placeholder="0 (+ adelanto / − deuda)"></div>
+      <div><label class="form-label">Notas</label><textarea class="form-input" id="per-obs" rows="2" style="resize:vertical" placeholder="Notas opcionales"></textarea></div>
+      <button class="btn-primary" style="margin-top:4px" onclick="guardarPersonal()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL COSTO FIJO -->
+<div class="modal" id="modal-costofijo">
+  <div class="modal-box" style="max-width:500px">
+    <div class="modal-header"><div class="modal-title">Costo fijo</div><button class="modal-close" onclick="cerrarModal('modal-costofijo')">×</button></div>
+    <div style="padding:24px 28px;display:grid;gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div><label class="form-label">Categoría *</label>
+          <select class="form-select" id="cf-categoria">
+            <option value="contador">Contador</option>
+            <option value="abogado">Abogado</option>
+            <option value="alquiler">Alquiler</option>
+            <option value="servicios">Servicios</option>
+            <option value="seguros">Seguros</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div><label class="form-label">Descripción</label><input type="text" class="form-input" id="cf-descripcion" placeholder="Detalle del gasto"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <div><label class="form-label">Monto *</label><input type="number" class="form-input" id="cf-monto" placeholder="0"></div>
+        <div><label class="form-label">Período</label>
+          <select class="form-select" id="cf-periodo">
+            <option value="mensual">Mensual</option>
+            <option value="quincenal">Quincenal</option>
+            <option value="semanal">Semanal</option>
+            <option value="anual">Anual</option>
+            <option value="unico">Único</option>
+          </select>
+        </div>
+        <div><label class="form-label">Estado</label>
+          <select class="form-select" id="cf-estado">
+            <option value="pendiente">Pendiente</option>
+            <option value="pagado">Pagado</option>
+            <option value="deuda">Deuda</option>
+          </select>
+        </div>
+      </div>
+      <div><label class="form-label">Saldo acumulado</label><input type="number" class="form-input" id="cf-saldo" placeholder="0 (deuda negativa, adelanto positivo)"></div>
+      <div><label class="form-label">Notas</label><textarea class="form-input" id="cf-obs" rows="2" style="resize:vertical"></textarea></div>
+      <button class="btn-primary" style="margin-top:4px" onclick="guardarCostoFijo()">Guardar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
