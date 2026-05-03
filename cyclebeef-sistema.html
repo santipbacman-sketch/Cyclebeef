@@ -182,6 +182,7 @@ async function guardarProduccion(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 async function cargarProducciones(){
@@ -308,7 +309,8 @@ async function cargarStock(){
 }
 
 function filtrarStock(){ cargarStock();
-  cargarViajes(); }
+  cargarViajes();
+  cargarVentas(); }
 
 
 // ══ LOGÍSTICA ══
@@ -472,8 +474,10 @@ async function guardarViaje(){
   cerrarModal('modal-viaje');
   toast('Viaje guardado ✓');
   cargarViajes();
+  cargarVentas();
   cargarStock();
-  cargarViajes(); // actualizar stock
+  cargarViajes();
+  cargarVentas(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -498,6 +502,231 @@ async function cargarViajes(){
       <td style="font-size:12px">${despStr||'—'}</td>
       <td><span class="badge badge-${v.estadoPago==='pagada'?'green':'amber'}">${v.estadoPago||'pendiente'}</span></td>
       <td><button class="btn-icon" onclick="eliminar('viajes','${d.id}',cargarViajes)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ VENTAS ══
+let stockVenta = [];
+let clientesVenta = [];
+
+async function abrirModalVenta(){
+  // Cargar clientes
+  const cliSnap = await db.collection('clientes').get();
+  clientesVenta = cliSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const selCli = document.getElementById('venta-cliente');
+  selCli.innerHTML = '<option value="">Seleccionar...</option>';
+  clientesVenta.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.nombre;
+    o.dataset.condPago = c.condPago || 'contado';
+    o.dataset.iva = c.iva || '21';
+    selCli.appendChild(o);
+  });
+
+  // Cargar stock
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  stockVenta = [];
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      if(f.cantidad > 0){
+        stockVenta.push({
+          lote: v.lote,
+          produccionId: d.id,
+          formatoId: f.formatoId,
+          formatoNombre: f.nombre,
+          cantidadDisponible: f.cantidad,
+          kgPorUnidad: f.kgPorUnidad
+        });
+      }
+    });
+  });
+
+  // Limpiar
+  document.getElementById('venta-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-num').value = '';
+  document.getElementById('venta-obs').value = '';
+  document.getElementById('items-venta-container').innerHTML = '';
+  agregarItemVenta();
+  calcVenta();
+  document.getElementById('modal-venta').classList.add('show');
+}
+
+function autocompletarCondPago(){
+  const sel = document.getElementById('venta-cliente');
+  const opt = sel.options[sel.selectedIndex];
+  if(opt.dataset.condPago) document.getElementById('venta-cond-pago').value = opt.dataset.condPago;
+  calcVencimiento();
+}
+
+function calcVencimiento(){
+  const fecha = document.getElementById('venta-fact-fecha').value;
+  const cond = document.getElementById('venta-cond-pago').value;
+  if(!fecha){return;}
+  const dias = {contado:0,'7dias':7,'15dias':15,'30dias':30,'60dias':60};
+  const d = new Date(fecha+'T12:00:00');
+  d.setDate(d.getDate() + (dias[cond]||0));
+  document.getElementById('venta-vto').value = d.toISOString().split('T')[0];
+}
+
+function agregarItemVenta(){
+  const container = document.getElementById('items-venta-container');
+  const opts = stockVenta.map(s =>
+    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-nombre="${s.formatoNombre}" data-lote="${s.lote}">${s.lote} — ${s.formatoNombre} (${s.cantidadDisponible} disp.)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'corte-row';
+  row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr auto';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcVenta()"><option value="">Seleccionar...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcVenta()">
+    <input type="number" class="form-input" placeholder="$/kg sin IVA" step="0.01" oninput="calcVenta()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="$ 0.00">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcVenta()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcVenta(){
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const sub = cant * kgPorU * precio;
+    row.querySelectorAll('input[type="text"]')[0].value = sub > 0 ? fmt(sub) : '';
+    totalNeto += sub;
+  });
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  document.getElementById('venta-neto').textContent = fmt(totalNeto);
+  document.getElementById('venta-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('venta-total').textContent = fmt(totalNeto + iva);
+  calcVencimiento();
+}
+
+function imprimirMemo(){
+  const cliente = document.getElementById('venta-cliente');
+  const cliNombre = cliente.options[cliente.selectedIndex]?.text || '—';
+  const fecha = document.getElementById('venta-fecha').value;
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let itemsHtml = '';
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = row.querySelectorAll('input[type="number"]')[0].value;
+    if(sel.value && cant){
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const formato = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td></tr>`;
+    }
+  });
+  const memo = document.getElementById('memo-contenido');
+  memo.innerHTML = `
+    <table style="width:100%;margin-bottom:20px">
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Cliente:</td><td style="padding:4px 0;font-weight:700">${cliNombre}</td></tr>
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Fecha:</td><td style="padding:4px 0">${fecha ? new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '—'}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#E4F4E8">
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Lote</th>
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Formato</th>
+        <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Cantidad</th>
+      </tr></thead>
+      <tbody>${itemsHtml}</tbody>
+    </table>
+    <div style="margin-top:24px;padding:16px;background:#f5f5f5;border-radius:8px;font-size:13px;color:#666">
+      <strong>Instrucciones:</strong> Preparar los lotes indicados respetando el orden FIFO. Verificar temperatura antes de cargar. Confirmar con el chofer la hora de retiro.
+    </div>
+  `;
+  document.getElementById('memo-print').style.display = 'block';
+  window.print();
+  document.getElementById('memo-print').style.display = 'none';
+}
+
+async function guardarVenta(){
+  const fecha = document.getElementById('venta-fecha').value;
+  const clienteId = document.getElementById('venta-cliente').value;
+  if(!fecha || !clienteId){toast('Completá los campos obligatorios','error');return;}
+
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  const items = [];
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    if(sel.value && cant > 0){
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      const sub = cant * kgPorU * precio;
+      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, subtotalNeto:sub});
+      totalNeto += sub;
+    }
+  });
+  if(items.length === 0){toast('Agregá al menos un item','error');return;}
+
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  const cliSnap = await db.collection('clientes').doc(clienteId).get();
+
+  await db.collection('ventas').add({
+    fecha,
+    clienteId,
+    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—',
+    condPago: document.getElementById('venta-cond-pago').value,
+    facturaTipo: tipo,
+    facturaNum: document.getElementById('venta-fact-num').value.trim(),
+    facturaFecha: document.getElementById('venta-fact-fecha').value,
+    vencimiento: document.getElementById('venta-vto').value,
+    items,
+    totalNeto,
+    iva,
+    totalConIva: totalNeto + iva,
+    obs: document.getElementById('venta-obs').value.trim(),
+    estadoCobro: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-venta');
+  toast('Venta guardada ✓');
+  cargarVentas();
+}
+
+async function cargarVentas(){
+  const snap = await db.collection('ventas').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-ventas');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Sin ventas registradas</div></div></td></tr>';
+    return;
+  }
+  const hoy = new Date();
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const itemsStr = (v.items||[]).map(i=>i.cantidad+'x '+i.formatoNombre+' ('+i.lote+')').join('<br>');
+    const vto = v.vencimiento ? new Date(v.vencimiento+'T12:00:00') : null;
+    const vencido = vto && vto < hoy && v.estadoCobro === 'pendiente';
+    const estadoColor = v.estadoCobro==='cobrada'?'green':vencido?'red':'amber';
+    const estadoLabel = v.estadoCobro==='cobrada'?'Cobrada':vencido?'Vencida':'Pendiente';
+    return `<tr>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="fw-600">${v.clienteNombre||'—'}</td>
+      <td>${v.facturaTipo||''} ${v.facturaNum||''}</td>
+      <td style="font-size:12px">${itemsStr}</td>
+      <td class="td-right">${fmt(v.totalNeto)}</td>
+      <td class="td-right">${fmt(v.iva)}</td>
+      <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+      <td>${pagoLabel[v.condPago]||v.condPago||'—'}</td>
+      <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -679,6 +908,7 @@ async function guardarProduccion(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 async function cargarProducciones(){
@@ -805,7 +1035,8 @@ async function cargarStock(){
 }
 
 function filtrarStock(){ cargarStock();
-  cargarViajes(); }
+  cargarViajes();
+  cargarVentas(); }
 
 
 // ══ LOGÍSTICA ══
@@ -969,8 +1200,10 @@ async function guardarViaje(){
   cerrarModal('modal-viaje');
   toast('Viaje guardado ✓');
   cargarViajes();
+  cargarVentas();
   cargarStock();
-  cargarViajes(); // actualizar stock
+  cargarViajes();
+  cargarVentas(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -995,6 +1228,231 @@ async function cargarViajes(){
       <td style="font-size:12px">${despStr||'—'}</td>
       <td><span class="badge badge-${v.estadoPago==='pagada'?'green':'amber'}">${v.estadoPago||'pendiente'}</span></td>
       <td><button class="btn-icon" onclick="eliminar('viajes','${d.id}',cargarViajes)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ VENTAS ══
+let stockVenta = [];
+let clientesVenta = [];
+
+async function abrirModalVenta(){
+  // Cargar clientes
+  const cliSnap = await db.collection('clientes').get();
+  clientesVenta = cliSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const selCli = document.getElementById('venta-cliente');
+  selCli.innerHTML = '<option value="">Seleccionar...</option>';
+  clientesVenta.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.nombre;
+    o.dataset.condPago = c.condPago || 'contado';
+    o.dataset.iva = c.iva || '21';
+    selCli.appendChild(o);
+  });
+
+  // Cargar stock
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  stockVenta = [];
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      if(f.cantidad > 0){
+        stockVenta.push({
+          lote: v.lote,
+          produccionId: d.id,
+          formatoId: f.formatoId,
+          formatoNombre: f.nombre,
+          cantidadDisponible: f.cantidad,
+          kgPorUnidad: f.kgPorUnidad
+        });
+      }
+    });
+  });
+
+  // Limpiar
+  document.getElementById('venta-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-num').value = '';
+  document.getElementById('venta-obs').value = '';
+  document.getElementById('items-venta-container').innerHTML = '';
+  agregarItemVenta();
+  calcVenta();
+  document.getElementById('modal-venta').classList.add('show');
+}
+
+function autocompletarCondPago(){
+  const sel = document.getElementById('venta-cliente');
+  const opt = sel.options[sel.selectedIndex];
+  if(opt.dataset.condPago) document.getElementById('venta-cond-pago').value = opt.dataset.condPago;
+  calcVencimiento();
+}
+
+function calcVencimiento(){
+  const fecha = document.getElementById('venta-fact-fecha').value;
+  const cond = document.getElementById('venta-cond-pago').value;
+  if(!fecha){return;}
+  const dias = {contado:0,'7dias':7,'15dias':15,'30dias':30,'60dias':60};
+  const d = new Date(fecha+'T12:00:00');
+  d.setDate(d.getDate() + (dias[cond]||0));
+  document.getElementById('venta-vto').value = d.toISOString().split('T')[0];
+}
+
+function agregarItemVenta(){
+  const container = document.getElementById('items-venta-container');
+  const opts = stockVenta.map(s =>
+    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-nombre="${s.formatoNombre}" data-lote="${s.lote}">${s.lote} — ${s.formatoNombre} (${s.cantidadDisponible} disp.)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'corte-row';
+  row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr auto';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcVenta()"><option value="">Seleccionar...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcVenta()">
+    <input type="number" class="form-input" placeholder="$/kg sin IVA" step="0.01" oninput="calcVenta()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="$ 0.00">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcVenta()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcVenta(){
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const sub = cant * kgPorU * precio;
+    row.querySelectorAll('input[type="text"]')[0].value = sub > 0 ? fmt(sub) : '';
+    totalNeto += sub;
+  });
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  document.getElementById('venta-neto').textContent = fmt(totalNeto);
+  document.getElementById('venta-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('venta-total').textContent = fmt(totalNeto + iva);
+  calcVencimiento();
+}
+
+function imprimirMemo(){
+  const cliente = document.getElementById('venta-cliente');
+  const cliNombre = cliente.options[cliente.selectedIndex]?.text || '—';
+  const fecha = document.getElementById('venta-fecha').value;
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let itemsHtml = '';
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = row.querySelectorAll('input[type="number"]')[0].value;
+    if(sel.value && cant){
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const formato = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td></tr>`;
+    }
+  });
+  const memo = document.getElementById('memo-contenido');
+  memo.innerHTML = `
+    <table style="width:100%;margin-bottom:20px">
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Cliente:</td><td style="padding:4px 0;font-weight:700">${cliNombre}</td></tr>
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Fecha:</td><td style="padding:4px 0">${fecha ? new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '—'}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#E4F4E8">
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Lote</th>
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Formato</th>
+        <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Cantidad</th>
+      </tr></thead>
+      <tbody>${itemsHtml}</tbody>
+    </table>
+    <div style="margin-top:24px;padding:16px;background:#f5f5f5;border-radius:8px;font-size:13px;color:#666">
+      <strong>Instrucciones:</strong> Preparar los lotes indicados respetando el orden FIFO. Verificar temperatura antes de cargar. Confirmar con el chofer la hora de retiro.
+    </div>
+  `;
+  document.getElementById('memo-print').style.display = 'block';
+  window.print();
+  document.getElementById('memo-print').style.display = 'none';
+}
+
+async function guardarVenta(){
+  const fecha = document.getElementById('venta-fecha').value;
+  const clienteId = document.getElementById('venta-cliente').value;
+  if(!fecha || !clienteId){toast('Completá los campos obligatorios','error');return;}
+
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  const items = [];
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    if(sel.value && cant > 0){
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      const sub = cant * kgPorU * precio;
+      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, subtotalNeto:sub});
+      totalNeto += sub;
+    }
+  });
+  if(items.length === 0){toast('Agregá al menos un item','error');return;}
+
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  const cliSnap = await db.collection('clientes').doc(clienteId).get();
+
+  await db.collection('ventas').add({
+    fecha,
+    clienteId,
+    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—',
+    condPago: document.getElementById('venta-cond-pago').value,
+    facturaTipo: tipo,
+    facturaNum: document.getElementById('venta-fact-num').value.trim(),
+    facturaFecha: document.getElementById('venta-fact-fecha').value,
+    vencimiento: document.getElementById('venta-vto').value,
+    items,
+    totalNeto,
+    iva,
+    totalConIva: totalNeto + iva,
+    obs: document.getElementById('venta-obs').value.trim(),
+    estadoCobro: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-venta');
+  toast('Venta guardada ✓');
+  cargarVentas();
+}
+
+async function cargarVentas(){
+  const snap = await db.collection('ventas').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-ventas');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Sin ventas registradas</div></div></td></tr>';
+    return;
+  }
+  const hoy = new Date();
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const itemsStr = (v.items||[]).map(i=>i.cantidad+'x '+i.formatoNombre+' ('+i.lote+')').join('<br>');
+    const vto = v.vencimiento ? new Date(v.vencimiento+'T12:00:00') : null;
+    const vencido = vto && vto < hoy && v.estadoCobro === 'pendiente';
+    const estadoColor = v.estadoCobro==='cobrada'?'green':vencido?'red':'amber';
+    const estadoLabel = v.estadoCobro==='cobrada'?'Cobrada':vencido?'Vencida':'Pendiente';
+    return `<tr>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="fw-600">${v.clienteNombre||'—'}</td>
+      <td>${v.facturaTipo||''} ${v.facturaNum||''}</td>
+      <td style="font-size:12px">${itemsStr}</td>
+      <td class="td-right">${fmt(v.totalNeto)}</td>
+      <td class="td-right">${fmt(v.iva)}</td>
+      <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+      <td>${pagoLabel[v.condPago]||v.condPago||'—'}</td>
+      <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -1176,6 +1634,7 @@ async function guardarProduccion(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 async function cargarProducciones(){
@@ -1302,7 +1761,8 @@ async function cargarStock(){
 }
 
 function filtrarStock(){ cargarStock();
-  cargarViajes(); }
+  cargarViajes();
+  cargarVentas(); }
 
 
 // ══ LOGÍSTICA ══
@@ -1466,8 +1926,10 @@ async function guardarViaje(){
   cerrarModal('modal-viaje');
   toast('Viaje guardado ✓');
   cargarViajes();
+  cargarVentas();
   cargarStock();
-  cargarViajes(); // actualizar stock
+  cargarViajes();
+  cargarVentas(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -1492,6 +1954,231 @@ async function cargarViajes(){
       <td style="font-size:12px">${despStr||'—'}</td>
       <td><span class="badge badge-${v.estadoPago==='pagada'?'green':'amber'}">${v.estadoPago||'pendiente'}</span></td>
       <td><button class="btn-icon" onclick="eliminar('viajes','${d.id}',cargarViajes)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ VENTAS ══
+let stockVenta = [];
+let clientesVenta = [];
+
+async function abrirModalVenta(){
+  // Cargar clientes
+  const cliSnap = await db.collection('clientes').get();
+  clientesVenta = cliSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const selCli = document.getElementById('venta-cliente');
+  selCli.innerHTML = '<option value="">Seleccionar...</option>';
+  clientesVenta.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.nombre;
+    o.dataset.condPago = c.condPago || 'contado';
+    o.dataset.iva = c.iva || '21';
+    selCli.appendChild(o);
+  });
+
+  // Cargar stock
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  stockVenta = [];
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      if(f.cantidad > 0){
+        stockVenta.push({
+          lote: v.lote,
+          produccionId: d.id,
+          formatoId: f.formatoId,
+          formatoNombre: f.nombre,
+          cantidadDisponible: f.cantidad,
+          kgPorUnidad: f.kgPorUnidad
+        });
+      }
+    });
+  });
+
+  // Limpiar
+  document.getElementById('venta-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-num').value = '';
+  document.getElementById('venta-obs').value = '';
+  document.getElementById('items-venta-container').innerHTML = '';
+  agregarItemVenta();
+  calcVenta();
+  document.getElementById('modal-venta').classList.add('show');
+}
+
+function autocompletarCondPago(){
+  const sel = document.getElementById('venta-cliente');
+  const opt = sel.options[sel.selectedIndex];
+  if(opt.dataset.condPago) document.getElementById('venta-cond-pago').value = opt.dataset.condPago;
+  calcVencimiento();
+}
+
+function calcVencimiento(){
+  const fecha = document.getElementById('venta-fact-fecha').value;
+  const cond = document.getElementById('venta-cond-pago').value;
+  if(!fecha){return;}
+  const dias = {contado:0,'7dias':7,'15dias':15,'30dias':30,'60dias':60};
+  const d = new Date(fecha+'T12:00:00');
+  d.setDate(d.getDate() + (dias[cond]||0));
+  document.getElementById('venta-vto').value = d.toISOString().split('T')[0];
+}
+
+function agregarItemVenta(){
+  const container = document.getElementById('items-venta-container');
+  const opts = stockVenta.map(s =>
+    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-nombre="${s.formatoNombre}" data-lote="${s.lote}">${s.lote} — ${s.formatoNombre} (${s.cantidadDisponible} disp.)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'corte-row';
+  row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr auto';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcVenta()"><option value="">Seleccionar...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcVenta()">
+    <input type="number" class="form-input" placeholder="$/kg sin IVA" step="0.01" oninput="calcVenta()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="$ 0.00">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcVenta()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcVenta(){
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const sub = cant * kgPorU * precio;
+    row.querySelectorAll('input[type="text"]')[0].value = sub > 0 ? fmt(sub) : '';
+    totalNeto += sub;
+  });
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  document.getElementById('venta-neto').textContent = fmt(totalNeto);
+  document.getElementById('venta-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('venta-total').textContent = fmt(totalNeto + iva);
+  calcVencimiento();
+}
+
+function imprimirMemo(){
+  const cliente = document.getElementById('venta-cliente');
+  const cliNombre = cliente.options[cliente.selectedIndex]?.text || '—';
+  const fecha = document.getElementById('venta-fecha').value;
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let itemsHtml = '';
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = row.querySelectorAll('input[type="number"]')[0].value;
+    if(sel.value && cant){
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const formato = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td></tr>`;
+    }
+  });
+  const memo = document.getElementById('memo-contenido');
+  memo.innerHTML = `
+    <table style="width:100%;margin-bottom:20px">
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Cliente:</td><td style="padding:4px 0;font-weight:700">${cliNombre}</td></tr>
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Fecha:</td><td style="padding:4px 0">${fecha ? new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '—'}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#E4F4E8">
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Lote</th>
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Formato</th>
+        <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Cantidad</th>
+      </tr></thead>
+      <tbody>${itemsHtml}</tbody>
+    </table>
+    <div style="margin-top:24px;padding:16px;background:#f5f5f5;border-radius:8px;font-size:13px;color:#666">
+      <strong>Instrucciones:</strong> Preparar los lotes indicados respetando el orden FIFO. Verificar temperatura antes de cargar. Confirmar con el chofer la hora de retiro.
+    </div>
+  `;
+  document.getElementById('memo-print').style.display = 'block';
+  window.print();
+  document.getElementById('memo-print').style.display = 'none';
+}
+
+async function guardarVenta(){
+  const fecha = document.getElementById('venta-fecha').value;
+  const clienteId = document.getElementById('venta-cliente').value;
+  if(!fecha || !clienteId){toast('Completá los campos obligatorios','error');return;}
+
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  const items = [];
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    if(sel.value && cant > 0){
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      const sub = cant * kgPorU * precio;
+      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, subtotalNeto:sub});
+      totalNeto += sub;
+    }
+  });
+  if(items.length === 0){toast('Agregá al menos un item','error');return;}
+
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  const cliSnap = await db.collection('clientes').doc(clienteId).get();
+
+  await db.collection('ventas').add({
+    fecha,
+    clienteId,
+    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—',
+    condPago: document.getElementById('venta-cond-pago').value,
+    facturaTipo: tipo,
+    facturaNum: document.getElementById('venta-fact-num').value.trim(),
+    facturaFecha: document.getElementById('venta-fact-fecha').value,
+    vencimiento: document.getElementById('venta-vto').value,
+    items,
+    totalNeto,
+    iva,
+    totalConIva: totalNeto + iva,
+    obs: document.getElementById('venta-obs').value.trim(),
+    estadoCobro: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-venta');
+  toast('Venta guardada ✓');
+  cargarVentas();
+}
+
+async function cargarVentas(){
+  const snap = await db.collection('ventas').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-ventas');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Sin ventas registradas</div></div></td></tr>';
+    return;
+  }
+  const hoy = new Date();
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const itemsStr = (v.items||[]).map(i=>i.cantidad+'x '+i.formatoNombre+' ('+i.lote+')').join('<br>');
+    const vto = v.vencimiento ? new Date(v.vencimiento+'T12:00:00') : null;
+    const vencido = vto && vto < hoy && v.estadoCobro === 'pendiente';
+    const estadoColor = v.estadoCobro==='cobrada'?'green':vencido?'red':'amber';
+    const estadoLabel = v.estadoCobro==='cobrada'?'Cobrada':vencido?'Vencida':'Pendiente';
+    return `<tr>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="fw-600">${v.clienteNombre||'—'}</td>
+      <td>${v.facturaTipo||''} ${v.facturaNum||''}</td>
+      <td style="font-size:12px">${itemsStr}</td>
+      <td class="td-right">${fmt(v.totalNeto)}</td>
+      <td class="td-right">${fmt(v.iva)}</td>
+      <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+      <td>${pagoLabel[v.condPago]||v.condPago||'—'}</td>
+      <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
     </tr>`;
   }).join('');
 }
@@ -1811,7 +2498,32 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
     </table>
   </div>
 </div>
-<div class="page" id="page-ventas"><div class="page-header"><div class="page-title">Ventas</div></div><div class="card"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Próximamente</div></div></div></div>
+<div class="page" id="page-ventas">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Ventas</div><div class="page-sub">Pedidos, facturas y trazabilidad al cliente</div></div>
+    <button class="btn btn-primary" onclick="abrirModalVenta()">+ Nueva venta</button>
+  </div>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr>
+        <th>Fecha</th>
+        <th>Cliente</th>
+        <th>Factura</th>
+        <th>Detalle</th>
+        <th class="td-right">Neto</th>
+        <th class="td-right">IVA</th>
+        <th class="td-right">Total</th>
+        <th>Cond. pago</th>
+        <th>Vencimiento</th>
+        <th>Estado cobro</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="body-ventas">
+        <tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Sin ventas registradas</div><div class="empty-sub">Registrá la primera con el botón + Nueva venta</div></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 <div class="page" id="page-cobros"><div class="page-header"><div class="page-title">Cobros y pagos</div></div><div class="card"><div class="empty"><div class="empty-icon">💰</div><div class="empty-text">Próximamente</div></div></div></div>
 <div class="page" id="page-reportes"><div class="page-header"><div class="page-title">Reportes</div></div><div class="card"><div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Próximamente</div></div></div></div>
 
@@ -2135,6 +2847,67 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
 </div>
 
+
+<!-- ══ MODAL VENTA ══ -->
+<div class="modal-overlay" id="modal-venta">
+  <div class="modal" style="max-width:780px">
+    <div class="modal-header">
+      <div class="modal-title">Nueva venta</div>
+      <button class="modal-close" onclick="cerrarModal('modal-venta')">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="section-title">Datos generales</div>
+      <div class="form-grid form-grid-3 mb-16">
+        <div><label class="form-label">Fecha <span class="required">*</span></label><input type="date" class="form-input" id="venta-fecha"></div>
+        <div><label class="form-label">Cliente <span class="required">*</span></label><select class="form-select" id="venta-cliente" onchange="autocompletarCondPago()"><option value="">Seleccionar...</option></select></div>
+        <div><label class="form-label">Condición de pago</label><select class="form-select" id="venta-cond-pago" onchange="calcVencimiento()"><option value="contado">Contado</option><option value="7dias">7 días</option><option value="15dias">15 días</option><option value="30dias">30 días</option><option value="60dias">60 días</option></select></div>
+      </div>
+
+      <div class="section-title">Factura</div>
+      <div class="form-grid form-grid-4 mb-16">
+        <div><label class="form-label">Tipo <span class="required">*</span></label><select class="form-select" id="venta-fact-tipo" onchange="calcVenta()"><option value="A">Factura A (IVA 21%)</option><option value="B">Factura B (IVA 21%)</option><option value="C">Factura C (sin IVA)</option></select></div>
+        <div><label class="form-label">N° Factura</label><input type="text" class="form-input" id="venta-fact-num" placeholder="0001-00000001"></div>
+        <div><label class="form-label">Fecha factura</label><input type="date" class="form-input" id="venta-fact-fecha"></div>
+        <div><label class="form-label">Vencimiento cobro</label><input type="date" class="form-input" id="venta-vto" readonly style="background:var(--sand)"></div>
+      </div>
+
+      <div class="section-title">Items vendidos</div>
+      <div style="font-family:var(--font-h);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;padding:0 14px 8px">
+        <span>Lote — Formato</span><span>Cantidad</span><span>$ / kg (sin IVA)</span><span>Subtotal neto</span><span></span>
+      </div>
+      <div id="items-venta-container"></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="agregarItemVenta()">+ Agregar item</button>
+
+      <div class="section-title" style="margin-top:20px">Resumen</div>
+      <div class="iva-box">
+        <div class="iva-row"><span class="iva-label">Neto (sin IVA)</span><span id="venta-neto">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">IVA</span><span id="venta-iva">$ 0.00</span></div>
+        <div class="iva-row"><span class="iva-label">Total factura</span><span id="venta-total">$ 0.00</span></div>
+      </div>
+
+      <div style="margin-top:16px"><label class="form-label">Observaciones</label><textarea class="form-textarea" id="venta-obs" placeholder="Notas..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modal-venta')">Cancelar</button>
+      <button class="btn btn-primary" onclick="imprimirMemo()" style="background:var(--sand);color:var(--text);margin-right:auto">🖨 Memo fábrica</button>
+      <button class="btn btn-primary" onclick="guardarVenta()">Guardar venta</button>
+    </div>
+  </div>
+</div>
+
+<!-- MEMO FÁBRICA (oculto, para imprimir) -->
+<div id="memo-print" style="display:none">
+  <div style="font-family:Arial,sans-serif;padding:32px;max-width:600px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:22px;font-weight:700;color:#1A4726">CYCLE BEEF</div>
+      <div style="font-size:14px;color:#666;margin-top:4px">ORDEN DE DESPACHO — USO INTERNO</div>
+      <hr style="margin:16px 0;border-color:#E8E0D0">
+    </div>
+    <div id="memo-contenido"></div>
+  </div>
+</div>
+
 <script>
 firebase.initializeApp({
   apiKey:"AIzaSyB7-xQXT3X44qeIsuybkrDLeYDoaoCpCSU",
@@ -2159,6 +2932,7 @@ async function init(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 // ── NAV ──
@@ -2486,6 +3260,7 @@ async function guardarEntrada(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 async function cargarEntradas(){
@@ -2686,6 +3461,7 @@ async function guardarProduccion(){
   cargarProducciones();
   cargarStock();
   cargarViajes();
+  cargarVentas();
 }
 
 async function cargarProducciones(){
@@ -2812,7 +3588,8 @@ async function cargarStock(){
 }
 
 function filtrarStock(){ cargarStock();
-  cargarViajes(); }
+  cargarViajes();
+  cargarVentas(); }
 
 
 // ══ LOGÍSTICA ══
@@ -2976,8 +3753,10 @@ async function guardarViaje(){
   cerrarModal('modal-viaje');
   toast('Viaje guardado ✓');
   cargarViajes();
+  cargarVentas();
   cargarStock();
-  cargarViajes(); // actualizar stock
+  cargarViajes();
+  cargarVentas(); // actualizar stock
 }
 
 async function cargarViajes(){
@@ -3002,6 +3781,231 @@ async function cargarViajes(){
       <td style="font-size:12px">${despStr||'—'}</td>
       <td><span class="badge badge-${v.estadoPago==='pagada'?'green':'amber'}">${v.estadoPago||'pendiente'}</span></td>
       <td><button class="btn-icon" onclick="eliminar('viajes','${d.id}',cargarViajes)">🗑</button></td>
+    </tr>`;
+  }).join('');
+}
+
+
+// ══ VENTAS ══
+let stockVenta = [];
+let clientesVenta = [];
+
+async function abrirModalVenta(){
+  // Cargar clientes
+  const cliSnap = await db.collection('clientes').get();
+  clientesVenta = cliSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const selCli = document.getElementById('venta-cliente');
+  selCli.innerHTML = '<option value="">Seleccionar...</option>';
+  clientesVenta.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.nombre;
+    o.dataset.condPago = c.condPago || 'contado';
+    o.dataset.iva = c.iva || '21';
+    selCli.appendChild(o);
+  });
+
+  // Cargar stock
+  const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
+  stockVenta = [];
+  prodSnap.docs.forEach(d => {
+    const v = d.data();
+    (v.formatos||[]).forEach(f => {
+      if(f.cantidad > 0){
+        stockVenta.push({
+          lote: v.lote,
+          produccionId: d.id,
+          formatoId: f.formatoId,
+          formatoNombre: f.nombre,
+          cantidadDisponible: f.cantidad,
+          kgPorUnidad: f.kgPorUnidad
+        });
+      }
+    });
+  });
+
+  // Limpiar
+  document.getElementById('venta-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-fecha').valueAsDate = new Date();
+  document.getElementById('venta-fact-num').value = '';
+  document.getElementById('venta-obs').value = '';
+  document.getElementById('items-venta-container').innerHTML = '';
+  agregarItemVenta();
+  calcVenta();
+  document.getElementById('modal-venta').classList.add('show');
+}
+
+function autocompletarCondPago(){
+  const sel = document.getElementById('venta-cliente');
+  const opt = sel.options[sel.selectedIndex];
+  if(opt.dataset.condPago) document.getElementById('venta-cond-pago').value = opt.dataset.condPago;
+  calcVencimiento();
+}
+
+function calcVencimiento(){
+  const fecha = document.getElementById('venta-fact-fecha').value;
+  const cond = document.getElementById('venta-cond-pago').value;
+  if(!fecha){return;}
+  const dias = {contado:0,'7dias':7,'15dias':15,'30dias':30,'60dias':60};
+  const d = new Date(fecha+'T12:00:00');
+  d.setDate(d.getDate() + (dias[cond]||0));
+  document.getElementById('venta-vto').value = d.toISOString().split('T')[0];
+}
+
+function agregarItemVenta(){
+  const container = document.getElementById('items-venta-container');
+  const opts = stockVenta.map(s =>
+    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-nombre="${s.formatoNombre}" data-lote="${s.lote}">${s.lote} — ${s.formatoNombre} (${s.cantidadDisponible} disp.)</option>`
+  ).join('');
+  const row = document.createElement('div');
+  row.className = 'corte-row';
+  row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr auto';
+  row.innerHTML = `
+    <select class="form-select" onchange="calcVenta()"><option value="">Seleccionar...</option>${opts}</select>
+    <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcVenta()">
+    <input type="number" class="form-input" placeholder="$/kg sin IVA" step="0.01" oninput="calcVenta()">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="$ 0.00">
+    <button class="btn-icon" onclick="this.parentElement.remove();calcVenta()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+function calcVenta(){
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
+    const sub = cant * kgPorU * precio;
+    row.querySelectorAll('input[type="text"]')[0].value = sub > 0 ? fmt(sub) : '';
+    totalNeto += sub;
+  });
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  document.getElementById('venta-neto').textContent = fmt(totalNeto);
+  document.getElementById('venta-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
+  document.getElementById('venta-total').textContent = fmt(totalNeto + iva);
+  calcVencimiento();
+}
+
+function imprimirMemo(){
+  const cliente = document.getElementById('venta-cliente');
+  const cliNombre = cliente.options[cliente.selectedIndex]?.text || '—';
+  const fecha = document.getElementById('venta-fecha').value;
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  let itemsHtml = '';
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const cant = row.querySelectorAll('input[type="number"]')[0].value;
+    if(sel.value && cant){
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const formato = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td></tr>`;
+    }
+  });
+  const memo = document.getElementById('memo-contenido');
+  memo.innerHTML = `
+    <table style="width:100%;margin-bottom:20px">
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Cliente:</td><td style="padding:4px 0;font-weight:700">${cliNombre}</td></tr>
+      <tr><td style="padding:4px 0;color:#666;font-size:13px">Fecha:</td><td style="padding:4px 0">${fecha ? new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '—'}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#E4F4E8">
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Lote</th>
+        <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Formato</th>
+        <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Cantidad</th>
+      </tr></thead>
+      <tbody>${itemsHtml}</tbody>
+    </table>
+    <div style="margin-top:24px;padding:16px;background:#f5f5f5;border-radius:8px;font-size:13px;color:#666">
+      <strong>Instrucciones:</strong> Preparar los lotes indicados respetando el orden FIFO. Verificar temperatura antes de cargar. Confirmar con el chofer la hora de retiro.
+    </div>
+  `;
+  document.getElementById('memo-print').style.display = 'block';
+  window.print();
+  document.getElementById('memo-print').style.display = 'none';
+}
+
+async function guardarVenta(){
+  const fecha = document.getElementById('venta-fecha').value;
+  const clienteId = document.getElementById('venta-cliente').value;
+  if(!fecha || !clienteId){toast('Completá los campos obligatorios','error');return;}
+
+  const rows = document.querySelectorAll('#items-venta-container .corte-row');
+  const items = [];
+  let totalNeto = 0;
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const inputs = row.querySelectorAll('input[type="number"]');
+    const cant = parseInt(inputs[0].value) || 0;
+    const precio = parseFloat(inputs[1].value) || 0;
+    if(sel.value && cant > 0){
+      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
+      const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
+      const nombre = sel.options[sel.selectedIndex].dataset.nombre || '—';
+      const sub = cant * kgPorU * precio;
+      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, subtotalNeto:sub});
+      totalNeto += sub;
+    }
+  });
+  if(items.length === 0){toast('Agregá al menos un item','error');return;}
+
+  const tipo = document.getElementById('venta-fact-tipo').value;
+  const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
+  const cliSnap = await db.collection('clientes').doc(clienteId).get();
+
+  await db.collection('ventas').add({
+    fecha,
+    clienteId,
+    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—',
+    condPago: document.getElementById('venta-cond-pago').value,
+    facturaTipo: tipo,
+    facturaNum: document.getElementById('venta-fact-num').value.trim(),
+    facturaFecha: document.getElementById('venta-fact-fecha').value,
+    vencimiento: document.getElementById('venta-vto').value,
+    items,
+    totalNeto,
+    iva,
+    totalConIva: totalNeto + iva,
+    obs: document.getElementById('venta-obs').value.trim(),
+    estadoCobro: 'pendiente',
+    creado: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  cerrarModal('modal-venta');
+  toast('Venta guardada ✓');
+  cargarVentas();
+}
+
+async function cargarVentas(){
+  const snap = await db.collection('ventas').orderBy('creado','desc').get();
+  const tbody = document.getElementById('body-ventas');
+  if(snap.empty){
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">🧾</div><div class="empty-text">Sin ventas registradas</div></div></td></tr>';
+    return;
+  }
+  const hoy = new Date();
+  tbody.innerHTML = snap.docs.map(d => {
+    const v = d.data();
+    const itemsStr = (v.items||[]).map(i=>i.cantidad+'x '+i.formatoNombre+' ('+i.lote+')').join('<br>');
+    const vto = v.vencimiento ? new Date(v.vencimiento+'T12:00:00') : null;
+    const vencido = vto && vto < hoy && v.estadoCobro === 'pendiente';
+    const estadoColor = v.estadoCobro==='cobrada'?'green':vencido?'red':'amber';
+    const estadoLabel = v.estadoCobro==='cobrada'?'Cobrada':vencido?'Vencida':'Pendiente';
+    return `<tr>
+      <td>${v.fecha ? new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td class="fw-600">${v.clienteNombre||'—'}</td>
+      <td>${v.facturaTipo||''} ${v.facturaNum||''}</td>
+      <td style="font-size:12px">${itemsStr}</td>
+      <td class="td-right">${fmt(v.totalNeto)}</td>
+      <td class="td-right">${fmt(v.iva)}</td>
+      <td class="td-right fw-600">${fmt(v.totalConIva)}</td>
+      <td>${pagoLabel[v.condPago]||v.condPago||'—'}</td>
+      <td>${v.vencimiento ? new Date(v.vencimiento+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      <td><span class="badge badge-${estadoColor}">${estadoLabel}</span></td>
+      <td><button class="btn-icon" onclick="eliminar('ventas','${d.id}',cargarVentas)">🗑</button></td>
     </tr>`;
   }).join('');
 }
