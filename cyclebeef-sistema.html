@@ -611,6 +611,20 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   </div>
 </div>
 
+<!-- ══ COSTOS FIJOS ══ -->
+<div class="page" id="page-costosfijos">
+  <div class="page-header flex-between">
+    <div><div class="page-title">Costos fijos</div><div class="page-sub">Gastos periódicos del negocio</div></div>
+    <button class="btn-primary" onclick="abrirModalCostoFijo()">+ Nuevo costo</button>
+  </div>
+  <div id="cf-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:24px"></div>
+  <div class="card table-wrap">
+    <table><thead><tr>
+      <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
+    </tr></thead><tbody id="body-costosfijos"></tbody></table>
+  </div>
+</div>
+
 </div><!-- /main -->
 
 <div class="toast" id="toast"></div>
@@ -2639,20 +2653,6 @@ function cambiarTabCheques(tipo, el){
 }
 
 </script>
-
-<!-- ══ COSTOS FIJOS ══ -->
-<div class="page" id="page-costosfijos">
-  <div class="page-header flex-between">
-    <div><div class="page-title">Costos fijos</div><div class="page-sub">Gastos periódicos del negocio</div></div>
-    <button class="btn-primary" onclick="abrirModalCostoFijo()">+ Nuevo costo</button>
-  </div>
-  <div id="cf-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:24px"></div>
-  <div class="card table-wrap">
-    <table><thead><tr>
-      <th>Categoría</th><th>Descripción</th><th>Monto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
-    </tr></thead><tbody id="body-costosfijos"></tbody></table>
-  </div>
-</div>
 
 <!-- ══ PERSONAL ══ -->
 <!-- MODAL COSTO FIJO -->
