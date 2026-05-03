@@ -3671,7 +3671,6 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
   <div class="sidebar-section">Finanzas</div>
   <button class="nav-item" onclick="irA('cobros',this)"><span class="nav-icon">💰</span>Cobros y pagos</button>
   <button class="nav-item" onclick="irA('costosfijos',this)"><span class="nav-icon">📋</span>Costos fijos</button>
-  <button class="nav-item" onclick="irA('personal',this)"><span class="nav-icon">👤</span>Personal</button>
   <button class="nav-item" onclick="irA('reportes',this)"><span class="nav-icon">📊</span>Reportes</button>
   <div class="sidebar-bottom">
     <button class="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
@@ -4627,7 +4626,6 @@ function irA(pagina,el){
   document.getElementById('page-'+pagina).classList.add('active');
   el.classList.add('active');
   if(pagina==='costosfijos'){cargarCostosFijos();cargarResumenCostos();}
-  if(pagina==='personal') cargarPersonal();
   if(pagina==='inicio') cargarStockInicio();
 }
 
@@ -4641,14 +4639,13 @@ function cambiarTab(tab,el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+tab).style.display='block';
   el.classList.add('active');
-  if(tab==='personal') cargarPersonal();
   const labels={proveedores:'+ Nuevo proveedor',clientes:'+ Nuevo cliente',campos:'+ Nuevo campo',frigorificos:'+ Nuevo frigorífico',cortes:'+ Nuevo corte',formatos:'+ Nuevo formato'};
   document.getElementById('btn-nuevo-maestro').textContent=labels[tab]||'+ Nuevo';
 }
 
 function abrirNuevoMaestro(){
   const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato'};
-  cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-personal');cerrarModal('modal-costofijo');
+  cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-costofijo');
   document.getElementById(modales[tabActual]).classList.add('show');
 }
 
@@ -6160,139 +6157,15 @@ function cambiarTabCheques(tipo, el){
 </div>
 
 <!-- ══ PERSONAL ══ -->
-<div class="page" id="page-personal">
-  <div class="page-header flex-between">
-    <div><div class="page-title">Personal</div><div class="page-sub">Empleados y liquidación de sueldos</div></div>
-    <button class="btn-primary" onclick="abrirModalPersonal()">+ Nuevo empleado</button>
-  </div>
-  <div class="card table-wrap">
-    <table><thead><tr>
-      <th>Nombre</th><th>CUIL</th><th>Ingreso</th><th>Sueldo bruto / neto</th><th>Período</th><th>Estado</th><th>Saldo</th><th></th>
-    </tr></thead><tbody id="body-personal"></tbody></table>
-  </div>
-</div>
-
-<!-- MODAL PERSONAL -->
-<div class="modal" id="modal-personal">
-  <div class="modal-box" style="max-width:600px">
-    <div class="modal-header"><div class="modal-title">Empleado</div><button class="modal-close" onclick="cerrarModal('modal-personal')">×</button></div>
-    <div style="padding:24px 28px;display:grid;gap:14px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-        <div><label class="form-label">Nombre completo *</label><input type="text" class="form-input" id="per-nombre" placeholder="Juan García"></div>
-        <div><label class="form-label">CUIL *</label><input type="text" class="form-input" id="per-cuil" placeholder="20-12345678-9"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-        <div><label class="form-label">Fecha de ingreso</label><input type="date" class="form-input" id="per-ingreso"></div>
-        <div><label class="form-label">Puesto</label><input type="text" class="form-input" id="per-puesto" placeholder="Ej: Operario"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-        <div><label class="form-label">Sueldo bruto *</label><input type="number" class="form-input" id="per-bruto" placeholder="0" oninput="calcSueldo()"></div>
-        <div><label class="form-label">Período</label>
-          <select class="form-select" id="per-periodo">
-            <option value="mensual">Mensual</option>
-            <option value="quincenal">Quincenal</option>
-            <option value="semanal">Semanal</option>
-          </select>
-        </div>
-        <div><label class="form-label">Estado</label>
-          <select class="form-select" id="per-estado">
-            <option value="pendiente">Pendiente</option>
-            <option value="pagado">Pagado</option>
-            <option value="adelanto">Adelanto</option>
-            <option value="deuda">Deuda</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- LIQUIDACIÓN DETALLADA -->
-      <div style="background:var(--sand);border-radius:8px;padding:16px 18px;font-size:13px;display:grid;gap:0">
-
-        <!-- Bruto -->
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-          <span style="font-weight:700">Sueldo bruto</span>
-          <span id="liq-bruto" style="font-weight:700">$0,00</span>
-        </div>
-
-        <!-- APORTES DEL TRABAJADOR -->
-        <div style="font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Aportes del trabajador</div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Jubilación (11%)</span>
-          <span id="liq-jub" style="color:var(--red)">−$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Obra social empleado (3%)</span>
-          <span id="liq-os" style="color:var(--red)">−$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">INSSJP / Ley 19032 (3%)</span>
-          <span id="liq-ley" style="color:var(--red)">−$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Cuota sindical (2%)</span>
-          <span id="liq-sind" style="color:var(--red)">−$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0 10px;margin-top:2px;border-top:1px dashed var(--border);font-weight:700">
-          <span>Neto a cobrar</span>
-          <span id="liq-neto" style="color:var(--g2)">$0,00</span>
-        </div>
-
-        <!-- CONTRIBUCIONES PATRONALES -->
-        <div style="font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Contribuciones patronales</div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Jubilación patronal (12.71%)</span>
-          <span id="liq-jub-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Obra social patronal (6%)</span>
-          <span id="liq-os-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">INSSJP patronal (1.62%)</span>
-          <span id="liq-inssjp-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Asignaciones familiares (7.5%)</span>
-          <span id="liq-asig-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">Fondo desempleo (0.89%)</span>
-          <span id="liq-desem-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:3px 0">
-          <span style="color:var(--muted)">ART (est. 1.5%)</span>
-          <span id="liq-art-pat">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0 10px;margin-top:2px;border-top:1px dashed var(--border)">
-          <span style="color:var(--muted)">Total contribuciones patronales</span>
-          <span id="liq-contrib-total">$0,00</span>
-        </div>
-
-        <!-- RESUMEN COSTO TOTAL -->
-        <div style="display:flex;justify-content:space-between;padding:8px 10px;background:rgba(0,0,0,0.04);border-radius:6px;font-weight:700;font-size:14px">
-          <span>Costo total empleador</span>
-          <span id="liq-empleador" style="color:var(--g2)">$0,00</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;padding-top:8px;font-size:11px;color:var(--muted)">
-          <span>Aguinaldo mensual acumulado (SAC)</span>
-          <span id="liq-aguinaldo">$0,00</span>
-        </div>
-      </div>
-
-      <div><label class="form-label">Saldo (+ adelanto / − deuda)</label><input type="number" class="form-input" id="per-saldo" placeholder="0"></div>
-      <div><label class="form-label">Notas</label><textarea class="form-input" id="per-obs" rows="2" style="resize:vertical"></textarea></div>
-      <button class="btn-primary" onclick="guardarPersonal()">Guardar</button>
-    </div>
-  </div>
-</div>
-
 <!-- MODAL COSTO FIJO -->
 <div class="modal" id="modal-costofijo">
-  <div class="modal-box" style="max-width:500px">
+  <div class="modal-box" style="max-width:520px">
     <div class="modal-header"><div class="modal-title">Costo fijo</div><button class="modal-close" onclick="cerrarModal('modal-costofijo')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div><label class="form-label">Categoría *</label>
-          <select class="form-select" id="cf-categoria">
+          <select class="form-select" id="cf-categoria" onchange="togglePersonalCF()">
+            <option value="personal">Personal</option>
             <option value="contador">Contador</option>
             <option value="abogado">Abogado</option>
             <option value="alquiler">Alquiler</option>
@@ -6301,10 +6174,34 @@ function cambiarTabCheques(tipo, el){
             <option value="otro">Otro</option>
           </select>
         </div>
-        <div><label class="form-label">Descripción</label><input type="text" class="form-input" id="cf-descripcion" placeholder="Detalle"></div>
+        <div><label class="form-label">Descripción / Nombre</label><input type="text" class="form-input" id="cf-descripcion" placeholder="Detalle"></div>
       </div>
+
+      <!-- PANEL PERSONAL — visible solo cuando categoría = personal -->
+      <div id="cf-panel-personal" style="background:var(--sand);border-radius:8px;padding:16px 18px;font-size:13px;display:grid;gap:6px">
+        <div style="font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Liquidación estimada</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px">
+          <div><label class="form-label" style="font-size:11px">Sueldo bruto *</label><input type="number" class="form-input" id="cf-bruto" placeholder="0" oninput="calcSueldoCF()"></div>
+          <div><label class="form-label" style="font-size:11px">CUIL</label><input type="text" class="form-input" id="cf-cuil" placeholder="20-12345678-9"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Jubilación empleado (11%)</span><span id="cfliq-jub" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Obra social empleado (3%)</span><span id="cfliq-os" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">INSSJP / Ley 19032 (3%)</span><span id="cfliq-ley" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Cuota sindical (2%)</span><span id="cfliq-sind" style="color:var(--red)">−$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-top:1px dashed var(--border);font-weight:700"><span>Neto a cobrar</span><span id="cfliq-neto" style="color:var(--g2)">$0,00</span></div>
+        <div style="font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:4px 0 2px;padding-top:4px;border-top:1px solid var(--border)">Contribuciones patronales</div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Jubilación patronal (12.71%)</span><span id="cfliq-jubp">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Obra social patronal (6%)</span><span id="cfliq-osp">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">INSSJP patronal (1.62%)</span><span id="cfliq-inssjp">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Asignaciones familiares (7.5%)</span><span id="cfliq-asig">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Fondo desempleo (0.89%)</span><span id="cfliq-desem">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">ART (est. 1.5%)</span><span id="cfliq-art">$0,00</span></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 10px;margin-top:4px;background:rgba(0,0,0,0.05);border-radius:6px;font-weight:700"><span>Costo total empleador →</span><span id="cfliq-total" style="color:var(--g2)">$0,00</span></div>
+        <div style="font-size:11px;color:var(--muted);text-align:right">Este valor se usa como monto del costo fijo</div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-        <div><label class="form-label">Monto *</label><input type="number" class="form-input" id="cf-monto" placeholder="0"></div>
+        <div id="cf-monto-wrap"><label class="form-label">Monto *</label><input type="number" class="form-input" id="cf-monto" placeholder="0"></div>
         <div><label class="form-label">Período</label>
           <select class="form-select" id="cf-periodo">
             <option value="mensual">Mensual</option>
@@ -6330,124 +6227,68 @@ function cambiarTabCheques(tipo, el){
 </div>
 
 <script>
-function calcSueldo(){
-  const bruto=parseFloat(document.getElementById('per-bruto').value)||0;
+function togglePersonalCF(){
+  const cat=document.getElementById('cf-categoria').value;
+  const panel=document.getElementById('cf-panel-personal');
+  const montoWrap=document.getElementById('cf-monto-wrap');
+  if(cat==='personal'){
+    panel.style.display='grid';
+    montoWrap.style.display='none';
+  } else {
+    panel.style.display='none';
+    montoWrap.style.display='block';
+  }
+}
+function calcSueldoCF(){
+  const bruto=parseFloat(document.getElementById('cf-bruto').value)||0;
   const f=v=>'$'+v.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  // ── APORTES DEL TRABAJADOR (descuentos del sueldo) ──
-  const jub     = bruto * 0.11;    // Jubilación
-  const os      = bruto * 0.03;    // Obra social empleado
-  const ley     = bruto * 0.03;    // INSSJP / Ley 19032
-  const sind    = bruto * 0.02;    // Cuota sindical
-  const totalAportes = jub + os + ley + sind;
-  const neto = bruto - totalAportes;
-
-  // ── CONTRIBUCIONES PATRONALES (costo adicional del empleador) ──
-  const jubPat   = bruto * 0.1271; // Jubilación patronal
-  const osPat    = bruto * 0.06;   // Obra social patronal
-  const inssjpPat= bruto * 0.0162; // INSSJP patronal
-  const asigPat  = bruto * 0.075;  // Asignaciones familiares
-  const desemPat = bruto * 0.0089; // Fondo de desempleo
-  const artPat   = bruto * 0.015;  // ART (estimado)
-  const totalContrib = jubPat + osPat + inssjpPat + asigPat + desemPat + artPat;
-  const costoTotal = bruto + totalContrib;
-
-  document.getElementById('liq-bruto').textContent=f(bruto);
-  document.getElementById('liq-jub').textContent='−'+f(jub);
-  document.getElementById('liq-os').textContent='−'+f(os);
-  document.getElementById('liq-ley').textContent='−'+f(ley);
-  document.getElementById('liq-sind').textContent='−'+f(sind);
-  document.getElementById('liq-neto').textContent=f(neto);
-  document.getElementById('liq-jub-pat').textContent=f(jubPat);
-  document.getElementById('liq-os-pat').textContent=f(osPat);
-  document.getElementById('liq-inssjp-pat').textContent=f(inssjpPat);
-  document.getElementById('liq-asig-pat').textContent=f(asigPat);
-  document.getElementById('liq-desem-pat').textContent=f(desemPat);
-  document.getElementById('liq-art-pat').textContent=f(artPat);
-  document.getElementById('liq-contrib-total').textContent=f(totalContrib);
-  document.getElementById('liq-empleador').textContent=f(costoTotal);
-  document.getElementById('liq-aguinaldo').textContent=f(bruto/12);
-}
-function abrirModalPersonal(){
-  ['per-nombre','per-cuil','per-puesto','per-obs'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('per-bruto').value='';
-  document.getElementById('per-saldo').value='';
-  document.getElementById('per-ingreso').valueAsDate=new Date();
-  document.getElementById('per-periodo').value='mensual';
-  document.getElementById('per-estado').value='pendiente';
-  calcSueldo();
-  document.getElementById('modal-personal').classList.add('show');
-}
-async function guardarPersonal(){
-  const nombre=document.getElementById('per-nombre').value.trim();
-  const cuil=document.getElementById('per-cuil').value.trim();
-  const bruto=parseFloat(document.getElementById('per-bruto').value)||0;
-  if(!nombre||!cuil||!bruto){toast('Completá los campos obligatorios','error');return;}
-  // Aportes trabajador
   const jub=bruto*0.11,os=bruto*0.03,ley=bruto*0.03,sind=bruto*0.02;
-  const totalAportes=jub+os+ley+sind;
-  const neto=bruto-totalAportes;
-  // Contribuciones patronales
-  const jubPat=bruto*0.1271,osPat=bruto*0.06,inssjpPat=bruto*0.0162;
-  const asigPat=bruto*0.075,desemPat=bruto*0.0089,artPat=bruto*0.015;
-  const totalContrib=jubPat+osPat+inssjpPat+asigPat+desemPat+artPat;
+  const neto=bruto-(jub+os+ley+sind);
+  const jubP=bruto*0.1271,osP=bruto*0.06,inssjpP=bruto*0.0162;
+  const asigP=bruto*0.075,desemP=bruto*0.0089,artP=bruto*0.015;
+  const totalContrib=jubP+osP+inssjpP+asigP+desemP+artP;
   const costoTotal=bruto+totalContrib;
-  await db.collection('personal').add({
-    nombre,cuil,
-    ingreso:document.getElementById('per-ingreso').value,
-    puesto:document.getElementById('per-puesto').value.trim(),
-    sueldoBruto:bruto,sueldoNeto:neto,
-    // aportes del trabajador
-    jubilacion:jub,obraSocial:os,ley19032:ley,cuotaSindical:sind,
-    totalAportesTrabajador:totalAportes,
-    // contribuciones patronales
-    jubilacionPat:jubPat,obraSocialPat:osPat,inssjpPat,asignacionesFam:asigPat,
-    fondoDesempleo:desemPat,art:artPat,totalContribucionesPatronales:totalContrib,
-    costoEmpleador:costoTotal,aguinaldoMensual:bruto/12,
-    periodo:document.getElementById('per-periodo').value,
-    estadoPago:document.getElementById('per-estado').value,
-    saldo:parseFloat(document.getElementById('per-saldo').value)||0,
-    obs:document.getElementById('per-obs').value.trim(),
-    creado:firebase.firestore.FieldValue.serverTimestamp()
-  });
-  cerrarModal('modal-personal');toast('Empleado guardado ✓');cargarPersonal();
-}
-async function cargarPersonal(){
-  const snap=await db.collection('personal').get();
-  const tbody=document.getElementById('body-personal');
-  if(!tbody)return;
-  const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
-  if(snap.empty){tbody.innerHTML='<tr><td colspan="8"><div class="empty"><div class="empty-icon">👤</div><div class="empty-text">Sin empleados registrados</div></div></td></tr>';return;}
-  tbody.innerHTML=snap.docs.map(d=>{
-    const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
-    return `<tr>
-      <td class="fw-600">${v.nombre||'—'}<br><span style="font-size:11px;color:var(--muted)">${v.puesto||''}</span></td>
-      <td class="td-mono">${v.cuil||'—'}</td>
-      <td>${v.ingreso?new Date(v.ingreso+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
-      <td class="td-right fw-600">${f(v.sueldoBruto)}<br><span style="font-size:11px;color:var(--muted)">Neto: ${f(v.sueldoNeto)}</span><br><span style="font-size:10px;color:var(--muted)">Costo empleador: ${f(v.costoEmpleador||v.sueldoBruto*1.30)}</span></td>
-      <td>${v.periodo||'—'}</td>
-      <td><span class="badge badge-${ec}">${v.estadoPago||'—'}</span></td>
-      <td class="td-right" style="color:${s>0?'var(--g2)':s<0?'var(--red)':'inherit'}">${s!==0?f(Math.abs(s))+(s>0?' adel.':' deuda'):'—'}</td>
-      <td><button class="btn-icon" onclick="editarRegistro('personal','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('personal','${d.id}',cargarPersonal)">🗑</button></td>
-    </tr>`;
-  }).join('');
+  document.getElementById('cfliq-jub').textContent='−'+f(jub);
+  document.getElementById('cfliq-os').textContent='−'+f(os);
+  document.getElementById('cfliq-ley').textContent='−'+f(ley);
+  document.getElementById('cfliq-sind').textContent='−'+f(sind);
+  document.getElementById('cfliq-neto').textContent=f(neto);
+  document.getElementById('cfliq-jubp').textContent=f(jubP);
+  document.getElementById('cfliq-osp').textContent=f(osP);
+  document.getElementById('cfliq-inssjp').textContent=f(inssjpP);
+  document.getElementById('cfliq-asig').textContent=f(asigP);
+  document.getElementById('cfliq-desem').textContent=f(desemP);
+  document.getElementById('cfliq-art').textContent=f(artP);
+  document.getElementById('cfliq-total').textContent=f(costoTotal);
+  // actualizar campo monto oculto para que guardarCostoFijo lo tome
+  document.getElementById('cf-monto').value=costoTotal.toFixed(2);
 }
 function abrirModalCostoFijo(){
-  ['cf-descripcion','cf-obs'].forEach(id=>document.getElementById(id).value='');
+  ['cf-descripcion','cf-obs','cf-bruto','cf-cuil'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('cf-monto').value='';
   document.getElementById('cf-saldo').value='';
-  document.getElementById('cf-categoria').value='contador';
+  document.getElementById('cf-categoria').value='personal';
   document.getElementById('cf-periodo').value='mensual';
   document.getElementById('cf-estado').value='pendiente';
+  togglePersonalCF();
+  calcSueldoCF();
   document.getElementById('modal-costofijo').classList.add('show');
 }
 async function guardarCostoFijo(){
-  const monto=parseFloat(document.getElementById('cf-monto').value)||0;
+  const cat=document.getElementById('cf-categoria').value;
+  let monto=parseFloat(document.getElementById('cf-monto').value)||0;
+  if(cat==='personal'){
+    const bruto=parseFloat(document.getElementById('cf-bruto').value)||0;
+    if(!bruto){toast('Ingresá el sueldo bruto','error');return;}
+    monto=parseFloat(document.getElementById('cf-monto').value)||0; // ya calculado por calcSueldoCF
+  }
   if(!monto){toast('Ingresá un monto','error');return;}
+  const extra=cat==='personal'?{sueldoBruto:parseFloat(document.getElementById('cf-bruto').value)||0,cuil:document.getElementById('cf-cuil').value.trim()}:{};
   await db.collection('costosfijos').add({
-    categoria:document.getElementById('cf-categoria').value,
+    categoria:cat,
     descripcion:document.getElementById('cf-descripcion').value.trim(),
     monto,
+    ...extra,
     periodo:document.getElementById('cf-periodo').value,
     estadoPago:document.getElementById('cf-estado').value,
     saldo:parseFloat(document.getElementById('cf-saldo').value)||0,
@@ -6466,7 +6307,7 @@ async function cargarResumenCostos(){
     resumen[v.categoria]+=v.monto||0;
     totalMensual+=(v.monto||0)*(factores[v.periodo]||1);
   });
-  const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+  const cats={personal:'Personal',contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
   const el=document.getElementById('cf-cards');
   if(!el)return;
@@ -6478,7 +6319,7 @@ async function cargarCostosFijos(){
   const tbody=document.getElementById('body-costosfijos');
   if(!tbody)return;
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
-  const cats={contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
+  const cats={personal:'Personal',contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
   if(snap.empty){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
   tbody.innerHTML=snap.docs.map(d=>{
     const v=d.data(),ec=v.estadoPago==='pagado'?'green':v.estadoPago==='deuda'?'red':'amber',s=v.saldo||0;
@@ -6534,15 +6375,6 @@ const _editConfig = {
       'frigo-direccion':'direccion','frigo-contacto':'contacto','frigo-tel':'tel','frigo-email':'email'
     }
   },
-  personal: {
-    modal:'modal-personal',
-    recargar: cargarPersonal,
-    campos: {
-      'per-nombre':'nombre','per-cuil':'cuil','per-ingreso':'ingreso',
-      'per-puesto':'puesto','per-bruto':'sueldoBruto','per-periodo':'periodo',
-      'per-estado':'estadoPago','per-saldo':'saldo','per-obs':'obs'
-    }
-  },
   costosfijos: {
     modal:'modal-costofijo',
     recargar: cargarCostosFijos,
@@ -6573,8 +6405,14 @@ async function editarRegistro(coleccion, id){
     if(val !== undefined && val !== null) el.value = val;
   });
 
-  // Si es personal, recalcular liquidación
-  if(coleccion === 'personal' && typeof calcSueldo === 'function') calcSueldo();
+  // Si es costos fijos, mostrar/ocultar panel personal y recalcular
+  if(coleccion === 'costosfijos'){
+    togglePersonalCF();
+    if(data.categoria==='personal' && data.sueldoBruto){
+      document.getElementById('cf-bruto').value = data.sueldoBruto;
+      calcSueldoCF();
+    }
+  }
 
   // Cambiar título del modal
   const header = document.querySelector('#' + config.modal + ' .modal-title');
@@ -6603,11 +6441,6 @@ const _origGuardarFrigorifico = guardarFrigorifico;
 guardarFrigorifico = async function(){
   if(_editId && _editCol==='frigorificos'){ await _actualizarDoc('frigorificos', cargarFrigorificos); return; }
   return _origGuardarFrigorifico.apply(this, arguments);
-};
-const _origGuardarPersonal = guardarPersonal;
-guardarPersonal = async function(){
-  if(_editId && _editCol==='personal'){ await _actualizarDoc('personal', cargarPersonal); return; }
-  return _origGuardarPersonal.apply(this, arguments);
 };
 const _origGuardarCostoFijo = guardarCostoFijo;
 guardarCostoFijo = async function(){
