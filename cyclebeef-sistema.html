@@ -4649,12 +4649,8 @@ function cambiarTab(tab,el){
 }
 
 function abrirNuevoMaestro(){
-  // Resetear edición activa antes de abrir nuevo
-  _editId = null; _editCol = null;
   const modales={proveedores:'modal-proveedor',clientes:'modal-cliente',campos:'modal-campo',frigorificos:'modal-frigorifico',cortes:'modal-corte',formatos:'modal-formato',personal:'modal-personal'};
   cerrarModal('modal-proveedor');cerrarModal('modal-cliente');cerrarModal('modal-campo');cerrarModal('modal-frigorifico');cerrarModal('modal-corte');cerrarModal('modal-formato');cerrarModal('modal-personal');cerrarModal('modal-costofijo');
-  // Para personal usar abrirModalPersonal() que limpia campos y recalcula
-  if(tabActual==='personal'){ abrirModalPersonal(); return; }
   document.getElementById(modales[tabActual]).classList.add('show');
 }
 
@@ -6166,7 +6162,7 @@ function cambiarTabCheques(tipo, el){
 </div>
 
 <!-- MODAL PERSONAL -->
-<div class="modal" id="modal-personal">
+<div class="modal-overlay" id="modal-personal">
   <div class="modal-box" style="max-width:560px">
     <div class="modal-header"><div class="modal-title">Empleado</div><button class="modal-close" onclick="cerrarModal('modal-personal')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
@@ -6214,7 +6210,7 @@ function cambiarTabCheques(tipo, el){
 </div>
 
 <!-- MODAL COSTO FIJO -->
-<div class="modal" id="modal-costofijo">
+<div class="modal-overlay" id="modal-costofijo">
   <div class="modal-box" style="max-width:500px">
     <div class="modal-header"><div class="modal-title">Costo fijo</div><button class="modal-close" onclick="cerrarModal('modal-costofijo')">×</button></div>
     <div style="padding:24px 28px;display:grid;gap:14px">
