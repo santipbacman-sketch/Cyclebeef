@@ -688,11 +688,14 @@ async function guardarVenta(){
   const tipo = document.getElementById('venta-fact-tipo').value;
   const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
   const cliSnap = await db.collection('clientes').doc(clienteId).get();
+  const cliData = cliSnap.exists ? cliSnap.data() : {};
+  const clienteProvincia = cliData.provincia || '';
+  const clienteIibb = cliData.iibb || 0;
 
   await db.collection('ventas').add({
     fecha,
     clienteId,
-    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—',
+    clienteNombre: cliSnap.exists ? cliSnap.data().nombre : '—', clienteProvincia, clienteIibb,
     condPago: document.getElementById('venta-cond-pago').value,
     facturaTipo: tipo,
     facturaNum: document.getElementById('venta-fact-num').value.trim(),
@@ -1043,6 +1046,20 @@ async function cargarDashboard(){
   const ivaCredito = ivaFazon + ivaLog;
   const posicionIva = ivaDebito - ivaCredito;
 
+  // IIBB - calcular sobre ventas netas por cliente usando alícuota del cliente
+  const iibbPorProvincia = {};
+  let totalIibb = 0;
+  for(const d of ventas) {
+    const v = d.data();
+    const neto = v.totalNeto || 0;
+    const provincia = v.clienteProvincia || 'Sin especificar';
+    const alicuota = v.clienteIibb || 0;
+    const montoIibb = neto * alicuota / 100;
+    if(!iibbPorProvincia[provincia]) iibbPorProvincia[provincia] = 0;
+    iibbPorProvincia[provincia] += montoIibb;
+    totalIibb += montoIibb;
+  }
+
   // Actualizar cards
   document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
   document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
@@ -1074,6 +1091,10 @@ async function cargarDashboard(){
   document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
   document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
   document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+  document.getElementById('rep-iibb-total').textContent = fmt(totalIibb);
+  document.getElementById('dash-iibb-detalle').innerHTML = Object.entries(iibbPorProvincia).length === 0
+    ? '<div class="iva-row"><span class="iva-label">Sin datos</span></div>'
+    : Object.entries(iibbPorProvincia).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="iva-row"><span class="iva-label">${p}</span><span class="fw-600">${fmt(v)}</span></div>`).join('');
 
   // Ventas por cliente
   const porCliente = {};
@@ -2192,6 +2213,20 @@ async function cargarDashboard(){
   const ivaCredito = ivaFazon + ivaLog;
   const posicionIva = ivaDebito - ivaCredito;
 
+  // IIBB - calcular sobre ventas netas por cliente usando alícuota del cliente
+  const iibbPorProvincia = {};
+  let totalIibb = 0;
+  for(const d of ventas) {
+    const v = d.data();
+    const neto = v.totalNeto || 0;
+    const provincia = v.clienteProvincia || 'Sin especificar';
+    const alicuota = v.clienteIibb || 0;
+    const montoIibb = neto * alicuota / 100;
+    if(!iibbPorProvincia[provincia]) iibbPorProvincia[provincia] = 0;
+    iibbPorProvincia[provincia] += montoIibb;
+    totalIibb += montoIibb;
+  }
+
   // Actualizar cards
   document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
   document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
@@ -2223,6 +2258,10 @@ async function cargarDashboard(){
   document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
   document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
   document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+  document.getElementById('rep-iibb-total').textContent = fmt(totalIibb);
+  document.getElementById('dash-iibb-detalle').innerHTML = Object.entries(iibbPorProvincia).length === 0
+    ? '<div class="iva-row"><span class="iva-label">Sin datos</span></div>'
+    : Object.entries(iibbPorProvincia).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="iva-row"><span class="iva-label">${p}</span><span class="fw-600">${fmt(v)}</span></div>`).join('');
 
   // Ventas por cliente
   const porCliente = {};
@@ -3341,6 +3380,20 @@ async function cargarDashboard(){
   const ivaCredito = ivaFazon + ivaLog;
   const posicionIva = ivaDebito - ivaCredito;
 
+  // IIBB - calcular sobre ventas netas por cliente usando alícuota del cliente
+  const iibbPorProvincia = {};
+  let totalIibb = 0;
+  for(const d of ventas) {
+    const v = d.data();
+    const neto = v.totalNeto || 0;
+    const provincia = v.clienteProvincia || 'Sin especificar';
+    const alicuota = v.clienteIibb || 0;
+    const montoIibb = neto * alicuota / 100;
+    if(!iibbPorProvincia[provincia]) iibbPorProvincia[provincia] = 0;
+    iibbPorProvincia[provincia] += montoIibb;
+    totalIibb += montoIibb;
+  }
+
   // Actualizar cards
   document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
   document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
@@ -3372,6 +3425,10 @@ async function cargarDashboard(){
   document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
   document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
   document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+  document.getElementById('rep-iibb-total').textContent = fmt(totalIibb);
+  document.getElementById('dash-iibb-detalle').innerHTML = Object.entries(iibbPorProvincia).length === 0
+    ? '<div class="iva-row"><span class="iva-label">Sin datos</span></div>'
+    : Object.entries(iibbPorProvincia).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="iva-row"><span class="iva-label">${p}</span><span class="fw-600">${fmt(v)}</span></div>`).join('');
 
   // Ventas por cliente
   const porCliente = {};
@@ -4069,6 +4126,10 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
         <div><label class="form-label">Límite de crédito</label><input type="number" class="form-input" id="cli-limite" placeholder="0"></div>
       </div>
       <div class="mb-16"><label class="form-label">Dirección</label><input type="text" class="form-input" id="cli-direccion"></div>
+      <div class="form-grid form-grid-2 mb-16">
+        <div><label class="form-label">Provincia</label><select class="form-select" id="cli-provincia"><option value="">Sin especificar</option><option value="CABA">CABA</option><option value="Buenos Aires">Buenos Aires</option><option value="Córdoba">Córdoba</option><option value="Santa Fe">Santa Fe</option><option value="Mendoza">Mendoza</option><option value="Tucumán">Tucumán</option><option value="Entre Ríos">Entre Ríos</option><option value="Salta">Salta</option><option value="Misiones">Misiones</option><option value="Chaco">Chaco</option><option value="Corrientes">Corrientes</option><option value="Santiago del Estero">Santiago del Estero</option><option value="San Juan">San Juan</option><option value="Jujuy">Jujuy</option><option value="Río Negro">Río Negro</option><option value="Neuquén">Neuquén</option><option value="Formosa">Formosa</option><option value="Chubut">Chubut</option><option value="San Luis">San Luis</option><option value="Catamarca">Catamarca</option><option value="La Rioja">La Rioja</option><option value="La Pampa">La Pampa</option><option value="Santa Cruz">Santa Cruz</option><option value="Tierra del Fuego">Tierra del Fuego</option></select></div>
+        <div><label class="form-label">Alícuota IIBB (%)</label><input type="number" class="form-input" id="cli-iibb" placeholder="Ej: 3.5" step="0.01" min="0" max="15"></div>
+      </div>
       <hr class="divider">
       <div class="form-grid form-grid-3">
         <div><label class="form-label">Contacto</label><input type="text" class="form-input" id="cli-contacto"></div>
@@ -4629,7 +4690,7 @@ async function guardarCliente(){
   const condFiscal=document.getElementById('cli-cond-fiscal').value;
   const iva=document.getElementById('cli-iva').value;
   if(!nombre||!cuit||!tipo||!condFiscal||!iva){toast('Completá los campos obligatorios','error');return;}
-  await db.collection('clientes').add({nombre,tipo,razonSocial:document.getElementById('cli-razon').value.trim(),cuit,condFiscal,iva,condPago:document.getElementById('cli-cond-pago').value,limiteCredito:parseFloat(document.getElementById('cli-limite').value)||0,direccion:document.getElementById('cli-direccion').value.trim(),contacto:document.getElementById('cli-contacto').value.trim(),tel:document.getElementById('cli-tel').value.trim(),email:document.getElementById('cli-email').value.trim(),obs:document.getElementById('cli-obs').value.trim(),creado:firebase.firestore.FieldValue.serverTimestamp()});
+  await db.collection('clientes').add({nombre,tipo,razonSocial:document.getElementById('cli-razon').value.trim(),cuit,condFiscal,iva,condPago:document.getElementById('cli-cond-pago').value,limiteCredito:parseFloat(document.getElementById('cli-limite').value)||0,direccion:document.getElementById('cli-direccion').value.trim(),provincia:document.getElementById('cli-provincia').value,iibb:parseFloat(document.getElementById('cli-iibb').value)||0,contacto:document.getElementById('cli-contacto').value.trim(),tel:document.getElementById('cli-tel').value.trim(),email:document.getElementById('cli-email').value.trim(),obs:document.getElementById('cli-obs').value.trim(),creado:firebase.firestore.FieldValue.serverTimestamp()});
   cerrarModal('modal-cliente');toast('Cliente guardado ✓');cargarClientes();
 }
 
@@ -5905,6 +5966,20 @@ async function cargarDashboard(){
   const ivaCredito = ivaFazon + ivaLog;
   const posicionIva = ivaDebito - ivaCredito;
 
+  // IIBB - calcular sobre ventas netas por cliente usando alícuota del cliente
+  const iibbPorProvincia = {};
+  let totalIibb = 0;
+  for(const d of ventas) {
+    const v = d.data();
+    const neto = v.totalNeto || 0;
+    const provincia = v.clienteProvincia || 'Sin especificar';
+    const alicuota = v.clienteIibb || 0;
+    const montoIibb = neto * alicuota / 100;
+    if(!iibbPorProvincia[provincia]) iibbPorProvincia[provincia] = 0;
+    iibbPorProvincia[provincia] += montoIibb;
+    totalIibb += montoIibb;
+  }
+
   // Actualizar cards
   document.getElementById('dash-ventas-neto').textContent = fmt(ventasNeto);
   document.getElementById('dash-ventas-count').textContent = ventas.length + ' facturas';
@@ -5936,6 +6011,10 @@ async function cargarDashboard(){
   document.getElementById('rep-iva-credito').textContent = fmt(ivaCredito);
   document.getElementById('rep-iva-posicion').textContent = fmt(posicionIva);
   document.getElementById('rep-iva-posicion').style.color = posicionIva >= 0 ? 'var(--amber)' : 'var(--g2)';
+  document.getElementById('rep-iibb-total').textContent = fmt(totalIibb);
+  document.getElementById('dash-iibb-detalle').innerHTML = Object.entries(iibbPorProvincia).length === 0
+    ? '<div class="iva-row"><span class="iva-label">Sin datos</span></div>'
+    : Object.entries(iibbPorProvincia).sort((a,b)=>b[1]-a[1]).map(([p,v])=>`<div class="iva-row"><span class="iva-label">${p}</span><span class="fw-600">${fmt(v)}</span></div>`).join('');
 
   // Ventas por cliente
   const porCliente = {};
