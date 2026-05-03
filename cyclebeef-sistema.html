@@ -2813,9 +2813,12 @@ async function cargarResumenCostos(){
     Object.entries(resumen).map(([k,v])=>`<div class="stock-card"><div class="stock-card-label">${cats[k]||k}</div><div class="stock-card-val" style="font-size:20px">${f(v)}</div></div>`).join('');
 }
 async function cargarCostosFijos(){
-  const snap=await db.collection('costosfijos').get();
   const tbody=document.getElementById('body-costosfijos');
   if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:#888;padding:20px">Cargando...</td></tr>';
+  try{
+  const snap=await db.collection('costosfijos').get();
+  console.log('costosfijos snap size:', snap.size, 'empty:', snap.empty);
   const f=v=>'$'+(v||0).toLocaleString('es-AR',{minimumFractionDigits:2});
   const cats={personal:'Personal',contador:'Contador',abogado:'Abogado',alquiler:'Alquiler',servicios:'Servicios',seguros:'Seguros',otro:'Otro'};
   if(snap.empty){tbody.innerHTML='<tr><td colspan="7"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin costos fijos registrados</div></div></td></tr>';return;}
@@ -2831,6 +2834,10 @@ async function cargarCostosFijos(){
       <td><button class="btn-icon" onclick="editarRegistro('costosfijos','${d.id}')">✏️</button><button class="btn-icon" onclick="eliminar('costosfijos','${d.id}',cargarCostosFijos)">🗑</button></td>
     </tr>`;
   }).join('');
+  }catch(err){
+    console.error('Error cargando costosfijos:', err);
+    tbody.innerHTML='<tr><td colspan="7" style="color:red;padding:16px">Error: '+err.message+'</td></tr>';
+  }
 }
 // ══ EDICIÓN DE MAESTROS ══
 const _editConfig = {
