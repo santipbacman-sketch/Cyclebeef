@@ -789,11 +789,8 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
       <div class="section-title">Datos generales</div>
       <div class="form-grid form-grid-3 mb-16">
         <div><label class="form-label">N° Lote trazabilidad <span class="required">*</span></label><input type="text" class="form-input" id="ent-lote" placeholder="Ej: A101-025" oninput="document.getElementById('lote-preview').textContent='Lote: '+this.value.toUpperCase()"></div>
-        <div><label class="form-label">Fecha de faena <span class="required">*</span></label><input type="date" class="form-input" id="ent-fecha-faena"></div>
+        <div><label class="form-label">Fecha <span class="required">*</span></label><input type="date" class="form-input" id="ent-fecha"></div>
         <div><label class="form-label">Proveedor <span class="required">*</span></label><select class="form-select" id="ent-proveedor"><option value="">Seleccionar...</option></select></div>
-      </div>
-      <div class="form-grid form-grid-3 mb-16">
-        <div><label class="form-label">Fecha de entrada <span class="required">*</span></label><input type="date" class="form-input" id="ent-fecha"></div>
       </div>
       <div class="form-grid form-grid-2 mb-16">
         <div><label class="form-label">Campo de origen <span class="required">*</span></label><select class="form-select" id="ent-campo"><option value="">Seleccionar...</option></select></div>
@@ -978,15 +975,14 @@ tbody tr:hover td{background:rgba(245,242,235,0.8)}
       </div>
 
       <div class="section-title">Items vendidos</div>
-      <div style="font-family:var(--font-h);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);display:grid;grid-template-columns:2fr 0.7fr 0.7fr 1fr 1fr auto;gap:10px;padding:0 14px 8px">
-        <span>Lote — Formato</span><span>Cantidad</span><span>Kg total</span><span>$ / kg (sin IVA)</span><span>Subtotal neto</span><span></span>
+      <div style="font-family:var(--font-h);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;padding:0 14px 8px">
+        <span>Lote — Formato</span><span>Cantidad</span><span>$ / kg (sin IVA)</span><span>Subtotal neto</span><span></span>
       </div>
       <div id="items-venta-container"></div>
       <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="agregarItemVenta()">+ Agregar item</button>
 
       <div class="section-title" style="margin-top:20px">Resumen</div>
       <div class="iva-box">
-        <div class="iva-row"><span class="iva-label">Total kg</span><span id="venta-total-kg" class="fw-600">0.00 kg</span></div>
         <div class="iva-row"><span class="iva-label">Neto (sin IVA)</span><span id="venta-neto">$ 0.00</span></div>
         <div class="iva-row"><span class="iva-label">IVA</span><span id="venta-iva">$ 0.00</span></div>
         <div class="iva-row"><span class="iva-label">Total factura</span><span id="venta-total">$ 0.00</span></div>
@@ -1365,7 +1361,6 @@ async function eliminar(col,id,recarga){
 function abrirModalEntrada(){
   // limpiar
   ['ent-lote','ent-fact-num','ent-obs'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('ent-fecha-faena').valueAsDate=new Date();
   document.getElementById('ent-fecha').valueAsDate=new Date();
   document.getElementById('ent-fact-fecha').valueAsDate=new Date();
   document.getElementById('ent-proveedor').value='';
@@ -1417,12 +1412,11 @@ function actualizarTotales(){
 
 async function guardarEntrada(){
   const lote=document.getElementById('ent-lote').value.trim().toUpperCase();
-  const fechaFaena=document.getElementById('ent-fecha-faena').value;
   const fecha=document.getElementById('ent-fecha').value;
   const proveedorId=document.getElementById('ent-proveedor').value;
   const campoId=document.getElementById('ent-campo').value;
   const frigorificoId=document.getElementById('ent-frigorifico').value;
-  if(!lote||!fechaFaena||!fecha||!proveedorId||!campoId||!frigorificoId){toast('Completá los campos obligatorios','error');return;}
+  if(!lote||!fecha||!proveedorId||!campoId||!frigorificoId){toast('Completá los campos obligatorios','error');return;}
 
   // recolectar cortes
   const rows=document.querySelectorAll('#cortes-container .corte-row');
@@ -1447,7 +1441,7 @@ async function guardarEntrada(){
   const frigoSnap=await db.collection('frigorificos').doc(frigorificoId).get();
 
   await db.collection('entradas').add({
-    lote,fecha,fechaFaena,
+    lote,fecha,
     proveedorId,proveedorNombre:provSnap.exists?provSnap.data().nombre:'—',
     campoId,campoNombre:campoSnap.exists?campoSnap.data().nombre:'—',
     frigorificoId,frigorificoNombre:frigoSnap.exists?frigoSnap.data().nombre:'—',
@@ -1479,7 +1473,7 @@ async function cargarEntradas(){
     const estadoColor={pendiente:'amber',pagada:'green',vencida:'red'};
     return`<tr>
       <td class="td-mono fw-600" style="color:var(--g2)">${v.lote}</td>
-      <td><div style="font-size:11px;color:var(--muted);margin-bottom:1px">Faena</div>${v.fechaFaena?new Date(v.fechaFaena+'T12:00:00').toLocaleDateString('es-AR'):'—'}<div style="font-size:11px;color:var(--muted);margin-top:3px">Entrada</div>${v.fecha?new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
+      <td>${v.fecha?new Date(v.fecha+'T12:00:00').toLocaleDateString('es-AR'):'—'}</td>
       <td>${v.campoNombre||'—'}</td>
       <td>${v.frigorificoNombre||'—'}</td>
       <td>${v.proveedorNombre||'—'}</td>
@@ -1703,9 +1697,12 @@ async function cargarProducciones(){
 
 // ══ STOCK ══
 async function cargarStock(){
-  // El stock se calcula dinámicamente desde producciones
+  // Cargar maestro de formatos para kgCaja real
+  const fmtStockSnap = await db.collection('formatos').get();
+  const fmtStock = {};
+  fmtStockSnap.docs.forEach(d => { fmtStock[d.id] = d.data(); });
+
   const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
-  // También necesitamos saber qué se despachó (ventas/logística - por ahora 0)
   
   const stockItems = [];
   const formatoTotales = {};
@@ -1713,24 +1710,26 @@ async function cargarStock(){
   prodSnap.docs.forEach(d => {
     const v = d.data();
     (v.formatos||[]).forEach(f => {
-      // Por ahora el disponible es lo producido (se restará cuando hagamos logística)
-      const key = f.formatoId + '_' + v.lote;
+      const maestro = fmtStock[f.formatoId];
+      const kgPorUnidad = (maestro && maestro.kgCaja) ? parseFloat(maestro.kgCaja) : (parseFloat(f.kgPorUnidad) || 0);
+      const nombre = (maestro && maestro.nombre) ? maestro.nombre : f.nombre;
+      const kgTotal = f.cantidad * kgPorUnidad;
       stockItems.push({
         lote: v.lote,
         fecha: v.fecha,
         formatoId: f.formatoId,
-        formatoNombre: f.nombre,
+        formatoNombre: nombre,
         cantidadProducida: f.cantidad,
-        cantidadDisponible: f.cantidad, // se resta al despachar
-        kgPorUnidad: f.kgPorUnidad,
-        kgTotal: f.kgTotal,
+        cantidadDisponible: f.cantidad,
+        kgPorUnidad,
+        kgTotal,
         produccionId: d.id
       });
       if(!formatoTotales[f.formatoId]){
-        formatoTotales[f.formatoId] = {nombre:f.nombre, cajas:0, kg:0};
+        formatoTotales[f.formatoId] = {nombre, cajas:0, kg:0};
       }
       formatoTotales[f.formatoId].cajas += f.cantidad;
-      formatoTotales[f.formatoId].kg += f.kgTotal;
+      formatoTotales[f.formatoId].kg += kgTotal;
     });
   });
 
@@ -1820,20 +1819,28 @@ async function abrirModalViaje(){
     sel.appendChild(o);
   });
 
-  // Cargar stock disponible
+  // Cargar maestro de formatos para obtener kgCaja real
+  const fmtMaestroSnap = await db.collection('formatos').get();
+  const fmtMaestro = {};
+  fmtMaestroSnap.docs.forEach(d => { fmtMaestro[d.id] = d.data(); });
+
+  // Cargar stock disponible desde producciones
   const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
   stockParaDespacho = [];
   prodSnap.docs.forEach(d => {
     const v = d.data();
     (v.formatos||[]).forEach(f => {
       if(f.cantidad > 0){
+        const maestro = fmtMaestro[f.formatoId];
+        const kgPorUnidad = (maestro && maestro.kgCaja) ? parseFloat(maestro.kgCaja) : (parseFloat(f.kgPorUnidad) || 0);
+        const nombre = (maestro && maestro.nombre) ? maestro.nombre : f.nombre;
         stockParaDespacho.push({
           lote: v.lote,
           produccionId: d.id,
           formatoId: f.formatoId,
-          formatoNombre: f.nombre,
+          formatoNombre: nombre,
           cantidadDisponible: f.cantidad,
-          kgPorUnidad: f.kgPorUnidad
+          kgPorUnidad
         });
       }
     });
@@ -1858,8 +1865,9 @@ async function abrirModalViaje(){
 function agregarDespachoRow(){
   const container = document.getElementById('despachos-container');
   
+  // Opciones de lote+formato
   const lotesOpts = stockParaDespacho.map(s => 
-    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-max="${s.cantidadDisponible}" data-nombre="${s.formatoNombre}" data-lote="${s.lote}">${s.lote} — ${s.formatoNombre} · ${parseFloat(s.kgPorUnidad).toFixed(2)} kg/u (${s.cantidadDisponible} disp.)</option>`
+    `<option value="${s.produccionId}_${s.formatoId}" data-kg="${s.kgPorUnidad}" data-max="${s.cantidadDisponible}">${s.lote} — ${s.formatoNombre} · ${parseFloat(s.kgPorUnidad).toFixed(2)} kg/u (${s.cantidadDisponible} disp.)</option>`
   ).join('');
   
   const cliOpts = clientesLista.map(c => 
@@ -1869,38 +1877,24 @@ function agregarDespachoRow(){
   const row = document.createElement('div');
   row.className = 'despacho-row';
   row.innerHTML = `
-    <select class="form-select" onchange="onDespachoSelect(this)" style="grid-column:1/3">
-      <option value="">Seleccionar lote / formato...</option>${lotesOpts}
-    </select>
+    <select class="form-select" onchange="calcViaje()"><option value="">Seleccionar lote...</option>${lotesOpts}</select>
     <select class="form-select" onchange="calcViaje()"><option value="">Cliente...</option>${cliOpts}</select>
     <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcViaje()">
-    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted);font-size:12px" placeholder="kg total">
+    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="0.00 kg">
     <button class="btn-icon" onclick="this.parentElement.remove();calcViaje()">✕</button>
   `;
-  // Ajustar grid: select ocupa 2 cols, luego cliente, cant, kg, btn
-  row.style.gridTemplateColumns = '2fr 1.2fr 0.8fr 0.8fr auto';
   container.appendChild(row);
-}
-
-function onDespachoSelect(sel){
-  // Mostrar hint de kg/caja debajo del select
-  const opt = sel.options[sel.selectedIndex];
-  const kg = opt.dataset.kg ? parseFloat(opt.dataset.kg).toFixed(2) : null;
-  let hint = sel.parentElement.querySelector('.despacho-hint');
-  if(!hint){ hint = document.createElement('div'); hint.className='despacho-hint'; hint.style='font-size:11px;color:var(--g3);margin-top:3px;grid-column:1/3'; sel.parentElement.appendChild(hint); }
-  hint.textContent = kg ? `· ${kg} kg por unidad` : '';
-  calcViaje();
 }
 
 function calcViaje(){
   const rows = document.querySelectorAll('#despachos-container .despacho-row');
   let totalKg = 0;
   rows.forEach(row => {
-    const sel = row.querySelectorAll('select')[0];
-    const cant = parseInt(row.querySelectorAll('input[type="number"]')[0].value) || 0;
+    const sel = row.querySelector('select');
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
     const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
     const kg = cant * kgPorU;
-    row.querySelectorAll('input[type="text"]')[0].value = kg > 0 ? cant + ' u · ' + fmtKg(kg) : '';
+    row.querySelectorAll('input[type="text"]')[0].value = kg > 0 ? fmtKg(kg) : '';
     totalKg += kg;
   });
 
@@ -1929,7 +1923,7 @@ async function guardarViaje(){
   rows.forEach(row => {
     const selLote = row.querySelectorAll('select')[0];
     const selCli = row.querySelectorAll('select')[1];
-    const cant = parseInt(row.querySelectorAll('input[type="number"]')[0].value) || 0;
+    const cant = parseInt(row.querySelectorAll('input')[0].value) || 0;
     if(selLote.value && selCli.value && cant > 0){
       const kgPorU = parseFloat(selLote.options[selLote.selectedIndex].dataset.kg) || 0;
       const parts = selLote.value.split('_');
@@ -2036,6 +2030,11 @@ async function abrirModalVenta(){
     selCli.appendChild(o);
   });
 
+  // Cargar maestro de formatos para obtener kgCaja real
+  const fmtMaestroVentaSnap = await db.collection('formatos').get();
+  const fmtMaestroVenta = {};
+  fmtMaestroVentaSnap.docs.forEach(d => { fmtMaestroVenta[d.id] = d.data(); });
+
   // Cargar stock
   const prodSnap = await db.collection('producciones').orderBy('fecha','asc').get();
   stockVenta = [];
@@ -2043,13 +2042,16 @@ async function abrirModalVenta(){
     const v = d.data();
     (v.formatos||[]).forEach(f => {
       if(f.cantidad > 0){
+        const maestro = fmtMaestroVenta[f.formatoId];
+        const kgPorUnidad = (maestro && maestro.kgCaja) ? parseFloat(maestro.kgCaja) : (parseFloat(f.kgPorUnidad) || 0);
+        const nombre = (maestro && maestro.nombre) ? maestro.nombre : f.nombre;
         stockVenta.push({
           lote: v.lote,
           produccionId: d.id,
           formatoId: f.formatoId,
-          formatoNombre: f.nombre,
+          formatoNombre: nombre,
           cantidadDisponible: f.cantidad,
-          kgPorUnidad: f.kgPorUnidad
+          kgPorUnidad
         });
       }
     });
@@ -2090,11 +2092,10 @@ function agregarItemVenta(){
   ).join('');
   const row = document.createElement('div');
   row.className = 'corte-row';
-  row.style.gridTemplateColumns = '2fr 0.7fr 0.7fr 1fr 1fr auto';
+  row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr auto';
   row.innerHTML = `
-    <select class="form-select" onchange="onItemVentaSelect(this)"><option value="">Seleccionar lote / formato...</option>${opts}</select>
+    <select class="form-select" onchange="calcVenta()"><option value="">Seleccionar...</option>${opts}</select>
     <input type="number" class="form-input" placeholder="Cant." min="1" step="1" oninput="calcVenta()">
-    <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted);font-size:12px" placeholder="kg total">
     <input type="number" class="form-input" placeholder="$/kg sin IVA" step="0.01" oninput="calcVenta()">
     <input type="text" class="form-input" readonly style="background:var(--sand);color:var(--muted)" placeholder="$ 0.00">
     <button class="btn-icon" onclick="this.parentElement.remove();calcVenta()">✕</button>
@@ -2102,34 +2103,24 @@ function agregarItemVenta(){
   container.appendChild(row);
 }
 
-function onItemVentaSelect(sel){
-  calcVenta();
-}
-
 function calcVenta(){
   const rows = document.querySelectorAll('#items-venta-container .corte-row');
-  let totalNeto = 0, totalKgVenta = 0;
+  let totalNeto = 0;
   rows.forEach(row => {
     const sel = row.querySelector('select');
     const inputs = row.querySelectorAll('input[type="number"]');
-    const textos = row.querySelectorAll('input[type="text"]');
     const cant = parseInt(inputs[0].value) || 0;
     const precio = parseFloat(inputs[1].value) || 0;
     const kgPorU = sel.value ? parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0 : 0;
-    const kgFila = cant * kgPorU;
-    const sub = kgFila * precio;
-    textos[0].value = kgFila > 0 ? fmtKg(kgFila) : '';
-    textos[1].value = sub > 0 ? fmt(sub) : '';
+    const sub = cant * kgPorU * precio;
+    row.querySelectorAll('input[type="text"]')[0].value = sub > 0 ? fmt(sub) : '';
     totalNeto += sub;
-    totalKgVenta += kgFila;
   });
   const tipo = document.getElementById('venta-fact-tipo').value;
   const iva = tipo === 'C' ? 0 : totalNeto * 0.21;
   document.getElementById('venta-neto').textContent = fmt(totalNeto);
   document.getElementById('venta-iva').textContent = tipo === 'C' ? 'No aplica (Fact. C)' : fmt(iva);
   document.getElementById('venta-total').textContent = fmt(totalNeto + iva);
-  const elKg = document.getElementById('venta-total-kg');
-  if(elKg) elKg.textContent = fmtKg(totalKgVenta);
   calcVencimiento();
 }
 
@@ -2145,9 +2136,7 @@ function imprimirMemo(){
     if(sel.value && cant){
       const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
       const formato = sel.options[sel.selectedIndex].dataset.nombre || '—';
-      const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
-      const kgTotal = (parseInt(cant)||0) * kgPorU;
-      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${kgTotal.toFixed(2)} kg</td></tr>`;
+      itemsHtml += `<tr><td style="padding:8px;border-bottom:1px solid #eee">${lote}</td><td style="padding:8px;border-bottom:1px solid #eee">${formato}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${cant}</td></tr>`;
     }
   });
   const memo = document.getElementById('memo-contenido');
@@ -2161,7 +2150,6 @@ function imprimirMemo(){
         <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Lote</th>
         <th style="padding:10px 8px;text-align:left;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Formato</th>
         <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Cantidad</th>
-        <th style="padding:10px 8px;text-align:right;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#1A4726">Kg</th>
       </tr></thead>
       <tbody>${itemsHtml}</tbody>
     </table>
@@ -2191,9 +2179,8 @@ async function guardarVenta(){
       const kgPorU = parseFloat(sel.options[sel.selectedIndex].dataset.kg) || 0;
       const lote = sel.options[sel.selectedIndex].dataset.lote || '—';
       const nombre = sel.options[sel.selectedIndex].dataset.nombre || '—';
-      const kgTotal = cant * kgPorU;
-      const sub = kgTotal * precio;
-      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, kgTotal, subtotalNeto:sub});
+      const sub = cant * kgPorU * precio;
+      items.push({lote, formatoNombre:nombre, cantidad:cant, precioPorKg:precio, kgPorUnidad:kgPorU, subtotalNeto:sub});
       totalNeto += sub;
     }
   });
